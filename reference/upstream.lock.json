@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/Kaggle/kaggle-environments.git",
+  "commit": "28b6d8af3ce73926b3d0fda1410c1ddd8384ab8c",
+  "package_version": "1.32.7",
+  "environment": "kaggriculture",
+  "environment_version": "0.1.0",
+  "retrieved_on": "2026-08-20"
+}

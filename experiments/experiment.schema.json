@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaggriculture.local/experiment.schema.json",
+  "title": "Kaggriculture experiment result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project_commit",
+    "upstream_commit",
+    "simulator",
+    "build",
+    "policy_a",
+    "policy_b",
+    "opponents",
+    "seeds",
+    "player_positions",
+    "machine",
+    "recorded_at",
+    "results"
+  ],
+  "properties": {
+    "project_commit": { "type": "string" },
+    "upstream_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "simulator": { "enum": ["official-python", "cpp-scalar", "cpp-statistical"] },
+    "build": {
+      "type": "object",
+      "required": ["compiler", "flags"],
+      "properties": {
+        "compiler": { "type": "string" },
+        "flags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "policy_a": { "$ref": "#/$defs/policy" },
+    "policy_b": { "$ref": "#/$defs/policy" },
+    "opponents": { "type": "array", "items": { "type": "string" } },
+    "seeds": { "type": "array", "items": { "type": "integer" } },
+    "player_positions": {
+      "type": "array",
+      "items": { "enum": ["a-first", "b-first"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "machine": { "type": "object" },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "results": { "type": "object" }
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "required": ["id", "parameters"],
+      "properties": {
+        "id": { "type": "string" },
+        "parameters": { "type": "object" }
+      }
+    }
+  }
+}
+

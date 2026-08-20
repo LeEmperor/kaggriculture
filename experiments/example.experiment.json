@@ -1,0 +1,18 @@
+{
+  "project_commit": "WORKTREE",
+  "upstream_commit": "28b6d8af3ce73926b3d0fda1410c1ddd8384ab8c",
+  "simulator": "cpp-scalar",
+  "build": {
+    "compiler": "gcc 13.3.0",
+    "flags": ["-O3", "-DNDEBUG"]
+  },
+  "policy_a": { "id": "pass-v1", "parameters": {} },
+  "policy_b": { "id": "pass-v1", "parameters": {} },
+  "opponents": ["pass-v1"],
+  "seeds": [1234],
+  "player_positions": ["a-first", "b-first"],
+  "machine": { "description": "replace with benchmark host details" },
+  "recorded_at": "2026-08-20T00:00:00Z",
+  "results": {}
+}
+
