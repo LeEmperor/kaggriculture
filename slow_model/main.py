@@ -15,7 +15,7 @@ y_axis = np.linspace(0, 100, 100)
 
 figure, axes = plt.subplots()
 axes.plot(x_axis1, y_axis)
-axes.set_title("Kaggriculture bruh3 model")
+axes.set_title("Kaggriculture bruh4 model")
 axes.set_xlabel("x")
 axes.set_ylabel("y")
 
