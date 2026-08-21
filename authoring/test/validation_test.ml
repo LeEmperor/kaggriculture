@@ -1,11 +1,11 @@
 (* What Family.create must refuse — the residual checks the GADT cannot carry.
 
    Each case is a family that is well-kinded (it compiles) but violates a rule
-   submission/dsl/family.py enforces at load time. The authoring side must
-   reject it before any JSON exists, so a family author hears about the mistake
-   from OCaml rather than from a Python traceback later. The positive case is
-   Families.Monocrop_reorder.family itself: forcing it proves the one real
-   family still validates. *)
+   submission/dsl/family.py enforces at load time. The authoring side must reject it
+   before any JSON exists, so a family author hears about the mistake from OCaml rather
+   than from a Python traceback later. The positive case is
+   Families.Monocrop_reorder.family itself: forcing it proves the one real family still
+   validates. *)
 
 open Policy_family
 open Expr.O
@@ -17,21 +17,23 @@ let expect_failure name thunk =
   | (_ : Family.t) ->
     incr failures;
     Printf.printf "FAIL %s: validation accepted a bad family\n" name
-  | exception (Failure message) -> Printf.printf "PASS %s (%s)\n" name message
+  | exception Failure message -> Printf.printf "PASS %s (%s)\n" name message
+;;
 
 let counter = Expr.Reg.int "counter" ~init:0 ~cls:Expr.Telemetry
 
 let colour =
   Expr.Reg.enum "colour" ~values:[ "RED"; "GREEN" ] ~init:"RED" ~cls:Expr.Decision
+;;
 
 let minimal
-      ?(registers = [ Family.R counter ])
-      ?(reset_when = bool false)
-      ?(observe = [])
-      ?(market_rules = [])
-      ?(farmer_cascade = [])
-      ?(commit = [])
-      ()
+  ?(registers = [ Family.R counter ])
+  ?(reset_when = bool false)
+  ?(observe = [])
+  ?(market_rules = [])
+  ?(farmer_cascade = [])
+  ?(commit = [])
+  ()
   =
   Family.create
     ~policy_id:"test-v1"
@@ -44,6 +46,7 @@ let minimal
     ~market_rules
     ~farmer_cascade
     ~commit
+;;
 
 let () =
   expect_failure "next outside observe/commit" (fun () ->
@@ -64,14 +67,9 @@ let () =
         ]
       ());
   expect_failure "double write within a stage" (fun () ->
-    minimal
-      ~commit:[ Family.write counter (int 1); Family.write counter (int 2) ]
-      ());
+    minimal ~commit:[ Family.write counter (int 1); Family.write counter (int 2) ] ());
   expect_failure "enum write outside the declared domain" (fun () ->
-    minimal
-      ~registers:[ Family.R colour ]
-      ~commit:[ Family.write colour (str "BLUE") ]
-      ());
+    minimal ~registers:[ Family.R colour ] ~commit:[ Family.write colour (str "BLUE") ] ());
   expect_failure "undeclared register referenced" (fun () ->
     minimal ~registers:[ Family.R colour ] ~reset_when:(state counter >: int 0) ());
   expect_failure "duplicate rule name" (fun () ->
@@ -87,3 +85,4 @@ let () =
   let vector_count = String.length (Yojson.Safe.to_string json) in
   Printf.printf "PASS monocrop_reorder validates and emits (%d bytes)\n" vector_count;
   if !failures > 0 then exit 1
+;;

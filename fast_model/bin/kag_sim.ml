@@ -1,9 +1,9 @@
 (* kag-sim: the simulator CLI. Same contract as the retired C++ binary:
 
-     kag_sim.exe bench [--games N]
+   kag_sim.exe bench [--games N]
 
-   The bench drives PASS tapes through the full rule set — not a policy
-   workload; see docs/benchmark_baseline.md before quoting it anywhere. *)
+   The bench drives PASS tapes through the full rule set — not a policy workload; see
+   docs/benchmark_baseline.md before quoting it anywhere. *)
 
 let parse_games argv =
   let games = ref 100_000 in
@@ -24,6 +24,7 @@ let parse_games argv =
     incr i
   done;
   !games
+;;
 
 let benchmark argv =
   let games = parse_games argv in
@@ -58,6 +59,7 @@ let benchmark argv =
     (float_of_int !transitions /. seconds)
     (seconds *. 1.0e9 /. float_of_int !transitions)
     !checksum
+;;
 
 let () =
   if Array.length Sys.argv >= 2 && Sys.argv.(1) = "bench"
@@ -65,3 +67,4 @@ let () =
   else (
     Printf.eprintf "usage: %s bench [--games N]\n" Sys.argv.(0);
     exit 2)
+;;

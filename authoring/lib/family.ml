@@ -1,12 +1,12 @@
 (* The family container and its residual validation, then JSON emission.
 
-   Family.create checks exactly what the GADT in Expr cannot: that every
-   referenced parameter and register was declared to this family, the stage
-   restrictions on [next] and [fired] (the same rules submission/dsl/family.py
-   enforces at load), no double write within a stage, rule-name uniqueness, and
-   enum writes staying inside a register's declared domain. A family value that
-   exists can therefore be emitted, and the emitted JSON is expected to pass
-   the Python loader unchanged — that loader stays the final gate. *)
+   Family.create checks exactly what the GADT in Expr cannot: that every referenced
+   parameter and register was declared to this family, the stage restrictions on [next]
+   and [fired] (the same rules submission/dsl/family.py enforces at load), no double write
+   within a stage, rule-name uniqueness, and enum writes staying inside a register's
+   declared domain. A family value that exists can therefore be emitted, and the emitted
+   JSON is expected to pass the Python loader unchanged — that loader stays the final
+   gate. *)
 
 module SS = Set.Make (String)
 
@@ -46,7 +46,7 @@ let emit op operands = { op; operands }
 let rule ~name ~when_ ~emit = { rule_name = name; when_; emit }
 
 (* ------------------------------------------------------------------ *)
-(* Validation                                                          *)
+(* Validation *)
 (* ------------------------------------------------------------------ *)
 
 type ctx =
@@ -67,10 +67,16 @@ let rec check : type k. ctx -> k Expr.t -> unit =
   | Expr.Const _ -> ()
   | Expr.Param p ->
     if not (SS.mem p.Expr.p_name ctx.params)
-    then fail ctx (Printf.sprintf "parameter '%s' is not declared in this family" p.Expr.p_name)
+    then
+      fail
+        ctx
+        (Printf.sprintf "parameter '%s' is not declared in this family" p.Expr.p_name)
   | Expr.State r ->
     if not (SS.mem r.Expr.r_name ctx.regs)
-    then fail ctx (Printf.sprintf "register '%s' is not declared in this family" r.Expr.r_name)
+    then
+      fail
+        ctx
+        (Printf.sprintf "register '%s' is not declared in this family" r.Expr.r_name)
   | Expr.Next r ->
     (match ctx.next_ok with
      | None -> fail ctx "['next', ...] is only legal in the observe and commit stages"
@@ -118,6 +124,7 @@ let rec check : type k. ctx -> k Expr.t -> unit =
     check ctx c;
     check ctx t;
     check ctx e
+;;
 
 let check_domain : type k. ctx -> k Expr.reg -> k Expr.t -> unit =
   fun ctx reg value ->
@@ -130,79 +137,83 @@ let check_domain : type k. ctx -> k Expr.reg -> k Expr.t -> unit =
      | Some values ->
        List.iter
          (fun v ->
-            if not (List.mem v domain)
-            then
-              fail
-                ctx
-                (Printf.sprintf
-                   "writes value '%s' outside the declared domain of '%s'"
-                   v
-                   reg.Expr.r_name))
+           if not (List.mem v domain)
+           then
+             fail
+               ctx
+               (Printf.sprintf
+                  "writes value '%s' outside the declared domain of '%s'"
+                  v
+                  reg.Expr.r_name))
          values)
+;;
 
 let check_writes ctx stage writes =
   let (_ : SS.t) =
     List.fold_left
       (fun written (W (reg, value)) ->
-         let name = reg.Expr.r_name in
-         let ctx = { ctx with next_ok = Some written; where = stage ^ "." ^ name } in
-         if not (SS.mem name ctx.regs)
-         then fail ctx (Printf.sprintf "register '%s' is not declared in this family" name);
-         if SS.mem name written
-         then
-           fail
-             ctx
-             (Printf.sprintf
-                "'%s' is written twice in the %s stage; writes commit simultaneously"
-                name
-                stage);
-         check ctx value;
-         check_domain ctx reg value;
-         SS.add name written)
+        let name = reg.Expr.r_name in
+        let ctx = { ctx with next_ok = Some written; where = stage ^ "." ^ name } in
+        if not (SS.mem name ctx.regs)
+        then fail ctx (Printf.sprintf "register '%s' is not declared in this family" name);
+        if SS.mem name written
+        then
+          fail
+            ctx
+            (Printf.sprintf
+               "'%s' is written twice in the %s stage; writes commit simultaneously"
+               name
+               stage);
+        check ctx value;
+        check_domain ctx reg value;
+        SS.add name written)
       SS.empty
       writes
   in
   ()
+;;
 
 let check_rules ctx stage rules =
   let (_ : SS.t) =
     List.fold_left
       (fun seen r ->
-         let ctx = { ctx with where = stage ^ "." ^ r.rule_name } in
-         if r.rule_name = "" then fail ctx "a rule needs a non-empty name";
-         if SS.mem r.rule_name seen
-         then fail ctx (Printf.sprintf "duplicate rule name '%s'" r.rule_name);
-         check ctx r.when_;
-         List.iter (fun (O operand) -> check ctx operand) r.emit.operands;
-         SS.add r.rule_name seen)
+        let ctx = { ctx with where = stage ^ "." ^ r.rule_name } in
+        if r.rule_name = "" then fail ctx "a rule needs a non-empty name";
+        if SS.mem r.rule_name seen
+        then fail ctx (Printf.sprintf "duplicate rule name '%s'" r.rule_name);
+        check ctx r.when_;
+        List.iter (fun (O operand) -> check ctx operand) r.emit.operands;
+        SS.add r.rule_name seen)
       SS.empty
       rules
   in
   ()
+;;
 
 let unique_names kind names =
   let (_ : SS.t) =
     List.fold_left
       (fun seen name ->
-         if SS.mem name seen
-         then failwith (Printf.sprintf "duplicate %s name '%s'" kind name);
-         SS.add name seen)
+        if SS.mem name seen
+        then failwith (Printf.sprintf "duplicate %s name '%s'" kind name);
+        SS.add name seen)
       SS.empty
       names
   in
   ()
+;;
 
 let create
-      ~policy_id
-      ~family
-      ~family_version
-      ~parameters
-      ~registers
-      ~reset_when
-      ~observe
-      ~market_rules
-      ~farmer_cascade
-      ~commit
+  ~policy_id
+  ~family
+  ~family_version
+  ~parameters
+  ~registers
+  ~reset_when
+  ~observe
+  ~market_rules
+  ~farmer_cascade
+  ~commit
   =
   if registers = [] then failwith "a family needs at least one register";
   let param_names = List.map (fun (P p) -> p.Expr.p_name) parameters in
@@ -235,9 +246,10 @@ let create
   ; farmer_cascade
   ; commit
   }
+;;
 
 (* ------------------------------------------------------------------ *)
-(* Emission                                                            *)
+(* Emission *)
 (* ------------------------------------------------------------------ *)
 
 let param_json (P p) : string * Yojson.Safe.t =
@@ -248,16 +260,16 @@ let param_json (P p) : string * Yojson.Safe.t =
       @ (match p.Expr.p_min with
          | None -> []
          | Some low -> [ "min", `Int low ])
-      @ (match p.Expr.p_max with
-         | None -> []
-         | Some high -> [ "max", `Int high ])
+      @
+        (match p.Expr.p_max with
+        | None -> []
+        | Some high -> [ "max", `Int high ])
     | Expr.Enum values ->
-      [ "type", `String "enum"
-      ; "values", `List (List.map (fun v -> `String v) values)
-      ]
+      [ "type", `String "enum"; "values", `List (List.map (fun v -> `String v) values) ]
     | Expr.Bool -> failwith "boolean parameters are not supported"
   in
   p.Expr.p_name, `Assoc fields
+;;
 
 let register_json (R r) : string * Yojson.Safe.t =
   let type_fields =
@@ -265,9 +277,7 @@ let register_json (R r) : string * Yojson.Safe.t =
     | Expr.Int -> [ "type", `String "int" ]
     | Expr.Bool -> [ "type", `String "bool" ]
     | Expr.Enum values ->
-      [ "type", `String "enum"
-      ; "values", `List (List.map (fun v -> `String v) values)
-      ]
+      [ "type", `String "enum"; "values", `List (List.map (fun v -> `String v) values) ]
   in
   let cls =
     match r.Expr.r_cls with
@@ -275,22 +285,24 @@ let register_json (R r) : string * Yojson.Safe.t =
     | Expr.Telemetry -> "telemetry"
   in
   ( r.Expr.r_name
-  , `Assoc
-      (type_fields
-       @ [ "init", Expr.value_json r.Expr.r_init; "class", `String cls ]) )
+  , `Assoc (type_fields @ [ "init", Expr.value_json r.Expr.r_init; "class", `String cls ])
+  )
+;;
 
 let write_json (W (reg, value)) : Yojson.Safe.t =
   `Assoc [ "reg", `String reg.Expr.r_name; "value", Expr.to_json value ]
+;;
 
 let rule_json r : Yojson.Safe.t =
   `Assoc
     [ "name", `String r.rule_name
     ; "when", Expr.to_json r.when_
-    ; "emit"
+    ; ( "emit"
       , `List
           (`String r.emit.op
-           :: List.map (fun (O operand) -> Expr.to_json operand) r.emit.operands)
+           :: List.map (fun (O operand) -> Expr.to_json operand) r.emit.operands) )
     ]
+;;
 
 let to_json family : Yojson.Safe.t =
   `Assoc
@@ -306,3 +318,4 @@ let to_json family : Yojson.Safe.t =
     ; "farmer_cascade", `List (List.map rule_json family.farmer_cascade)
     ; "commit", `List (List.map write_json family.commit)
     ]
+;;

@@ -1,9 +1,9 @@
 (* Emit a family's JSON encoding to stdout — the Emit.json of Decision 4.
 
-   Usage:  dune exec bin/emit.exe [FAMILY]
-   With no argument, or "monocrop_reorder", emits monocrop-reorder-v1. *)
+   Usage: dune exec bin/emit.exe [FAMILY] With no argument, or "monocrop_reorder", emits
+   monocrop-reorder-v1. *)
 
-let families = [ "monocrop_reorder", (fun () -> Families.Monocrop_reorder.family) ]
+let families = [ ("monocrop_reorder", fun () -> Families.Monocrop_reorder.family) ]
 
 let () =
   let name =
@@ -24,3 +24,4 @@ let () =
   | Some family ->
     print_endline
       (Yojson.Safe.pretty_to_string ~std:true (Policy_family.Family.to_json (family ())))
+;;

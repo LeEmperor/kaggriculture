@@ -1,74 +1,59 @@
-(* The scalar transition engine — the complete Phase 3 rule set (all seven
-   rule groups of docs/kaggriculture_gameplan.md), ported rule-for-rule from
-   the pinned upstream interpreter and held to it by the differential
-   fixtures in ../test.
+(* The scalar transition engine — the complete Phase 3 rule set (all seven rule groups of
+   docs/kaggriculture_gameplan.md), ported rule-for-rule from the pinned upstream
+   interpreter and held to it by the differential fixtures in ../test.
 
-   Semantics that are deliberately exact rather than merely equivalent:
-   inventory insertion order (Python dict order decides which items survive a
-   capacity-limited drop), the market's two-phase per-unit lockstep, CPython's
-   round-half-even in the pricing curves, and the end-of-day RNG stream
-   (weed draws are consumed per empty tile even at zero chance, and feed the
-   shop-unlock choice) via the CPython-exact Python_random.
+   Semantics that are deliberately exact rather than merely equivalent: inventory
+   insertion order (Python dict order decides which items survive a capacity-limited
+   drop), the market's two-phase per-unit lockstep, CPython's round-half-even in the
+   pricing curves, and the end-of-day RNG stream (weed draws are consumed per empty tile
+   even at zero chance, and feed the shop-unlock choice) via the CPython-exact
+   Python_random.
 
-   Nothing here is trusted for research until the Phase 4 bulk differential
-   gate passes. The API shape is the game plan's: initial_state / step /
-   observe / copy / run_game over flat mutable state. Allocation inside
-   [step] is tolerated where faithfulness needs it; the game plan defers
-   performance-specific layouts until the scalar model passes the gate. *)
+   Nothing here is trusted for research until the Phase 4 bulk differential gate passes.
+   The API shape is the game plan's: initial_state / step / observe / copy / run_game over
+   flat mutable state. Allocation inside [step] is tolerated where faithfulness needs it;
+   the game plan defers performance-specific layouts until the scalar model passes the
+   gate. *)
 
-(* Item tables. Indices are the state encoding; the string names live in
-   Kag_serialize, which owns every conversion to the upstream JSON shapes.
-   Order matches upstream PRODUCTS / CROPS / ANIMALS declaration order. *)
+(* Item tables. Indices are the state encoding; the string names live in Kag_serialize,
+   which owns every conversion to the upstream JSON shapes. Order matches upstream
+   PRODUCTS / CROPS / ANIMALS declaration order. *)
 let product_count = 9 (* WHEAT CARROT TOMATO STRAWBERRY MELON EGG MILK WOOL FERTILIZER *)
-
 let crop_count = 5 (* the first five products *)
-
 let animal_count = 3 (* GOOSE COW SHEEP *)
 
-(* The shed holds products and (boxed) animals: indices 0..8 are products,
-   9..11 are animals. *)
+(* The shed holds products and (boxed) animals: indices 0..8 are products, 9..11 are
+   animals. *)
 let shed_item_count = product_count + animal_count
-
 let shed_index_of_animal animal = product_count + animal
 
 (* Crop data (upstream CROPS), indexed WHEAT CARROT TOMATO STRAWBERRY MELON. *)
 let crop_first_yield_day = [| 2; 2; 8; 10; 10 |]
-
 let crop_max_yield_day = [| 4; 3; 8; 10; 12 |]
-
 let crop_interval = [| 0; 0; 1; 2; 0 |]
-
 let crop_max_yield = [| 6; 4; 4; 4; 6 |]
-
 let crop_ongoing = [| false; false; true; true; false |]
 
-(* Seed prices (CROPS[*]["seed"]) and animal prices (ANIMALS[*]["cost"]) are
-   flat constants upstream, independent of the market curves. *)
+(* Seed prices (CROPS[*]["seed"]) and animal prices (ANIMALS[*]["cost"]) are flat
+   constants upstream, independent of the market curves. *)
 let seed_costs = [| 10; 20; 50; 100; 80 |]
-
 let animal_costs = [| 300; 400; 500 |]
 
-(* Animal data (upstream ANIMALS), indexed GOOSE COW SHEEP. Structures are
-   0 = COOP, 1 = PASTURE; products are shed-item indices (EGG MILK WOOL). *)
+(* Animal data (upstream ANIMALS), indexed GOOSE COW SHEEP. Structures are 0 = COOP, 1 =
+   PASTURE; products are shed-item indices (EGG MILK WOOL). *)
 let animal_structure = [| 0; 1; 1 |]
-
 let animal_first_yield_day = [| 4; 8; 6 |]
-
 let animal_interval = [| 1; 2; 3 |]
-
 let animal_max_held = [| 4; 6; 6 |]
-
 let animal_product = [| 5; 6; 7 |]
 
-(* Every default I0 is MARKET_I0; per-item I0 arrives with marketParams
-   support. Base prices in product order. *)
+(* Every default I0 is MARKET_I0; per-item I0 arrives with marketParams support. Base
+   prices in product order. *)
 let market_i0 = 10_000
-
 let market_base_prices = [| 25; 35; 60; 120; 250; 50; 160; 200; 100 |]
 
-(* Pricing model (upstream MARKET_PARAMS):
-     price(inv) = base + sign * amp * f(|inv - I0|),  amp = target * base / f(T)
-   floored at 1 after Python's round-half-even. *)
+(* Pricing model (upstream MARKET_PARAMS): price(inv) = base + sign * amp * f(|inv - I0|),
+   amp = target * base / f(T) floored at 1 after Python's round-half-even. *)
 type shape =
   | Linear
   | Sq
@@ -77,10 +62,10 @@ type shape =
   | Log10
   | Hinge
 
-(* One product's resolved price curve. [marketParams] configuration overrides
-   are resolved into these before the model sees them; base/I0/T are integers
-   as upstream declares them, targets travel as floats (integer-valued
-   overrides are numerically identical in the double math). *)
+(* One product's resolved price curve. [marketParams] configuration overrides are resolved
+   into these before the model sees them; base/I0/T are integers as upstream declares
+   them, targets travel as floats (integer-valued overrides are numerically identical in
+   the double math). *)
 type market_curve =
   { base : int
   ; i0 : int
@@ -106,23 +91,21 @@ let default_market_curves =
     ; above_func = above_func.(item)
     ; above_target = above_target.(item)
     })
+;;
 
 let hinge_gain = 8.0
-
 let price_floor = 1
 
-(* Quadrants unlock in the fixed order NW, NE, SW, SE; a farm's
-   [unlocked_quadrants] count is the whole story. *)
+(* Quadrants unlock in the fixed order NW, NE, SW, SE; a farm's [unlocked_quadrants] count
+   is the whole story. *)
 let quadrant_count = 4
-
 let land_prices = [| 1000; 2000; 4000 |]
-
 let max_shop_instances = 8
 
-(* Shop product lists (upstream SHOPS), indexed in sorted-name order — the
-   order rng.choice draws from: BAKERY BRUNCH_SPOT FARMERS_MARKET
-   ICE_CREAM_SHOP PET_CAFE PIZZA_SHOP SMOOTHIE_SHOP YARN_STORE. Values are
-   product indices; a single-product shop consumes double. *)
+(* Shop product lists (upstream SHOPS), indexed in sorted-name order — the order
+   rng.choice draws from: BAKERY BRUNCH_SPOT FARMERS_MARKET ICE_CREAM_SHOP PET_CAFE
+   PIZZA_SHOP SMOOTHIE_SHOP YARN_STORE. Values are product indices; a single-product shop
+   consumes double. *)
 let shop_products =
   [| [| 5; 0 |] (* BAKERY: EGG WHEAT *)
    ; [| 5; 0; 3 |] (* BRUNCH_SPOT: EGG WHEAT STRAWBERRY *)
@@ -133,17 +116,17 @@ let shop_products =
    ; [| 3; 6 |] (* SMOOTHIE_SHOP: STRAWBERRY MILK *)
    ; [| 7 |] (* YARN_STORE: WOOL *)
   |]
+;;
 
 let shop_indices = Array.init (Array.length shop_products) Fun.id
-
 let player_count = 2
 
 type status =
   | Active
   | Done
 
-(* Field names and semantics mirror the upstream plant dict exactly; the
-   serializer emits them 1:1. *)
+(* Field names and semantics mirror the upstream plant dict exactly; the serializer emits
+   them 1:1. *)
 type plant =
   { crop : int
   ; planted_day : int
@@ -175,11 +158,10 @@ type tile =
   | Animal of animal_state (* upstream folds the structure kind into the dict *)
 
 (* The knobs from the upstream specification (kaggriculture.json), minus the
-   framework-only [actTimeout]. [seed] is required here: differential replay
-   always pins it, and the upstream null-seed randomization is a framework
-   concern. [market_params] carries resolved per-item curves — sparse
-   marketParams overrides are merged onto the defaults by whoever builds the
-   config (None means pure defaults). *)
+   framework-only [actTimeout]. [seed] is required here: differential replay always pins
+   it, and the upstream null-seed randomization is a framework concern. [market_params]
+   carries resolved per-item curves — sparse marketParams overrides are merged onto the
+   defaults by whoever builds the config (None means pure defaults). *)
 type config =
   { episode_steps : int
   ; turns_per_day : int
@@ -211,6 +193,7 @@ let default_config =
   ; seed = 0
   ; market_params = None
   }
+;;
 
 type farm =
   { mutable money : float (* Python float upstream; kept identical *)
@@ -222,12 +205,11 @@ type farm =
   ; tiles : tile array (* row-major: tiles.(y * board_size + x) *)
   }
 
-(* Upstream inventories are Python dicts, and their insertion order is
-   semantically observable: DROP and the nightly shed drop walk items in
-   insertion order, so when shed room runs out, first-inserted items win and
-   the rest are discarded. [order] mirrors that key order — it lists the items
-   with nonzero count, oldest first. Zero-count items never appear (upstream
-   deletes keys the moment they reach zero). *)
+(* Upstream inventories are Python dicts, and their insertion order is semantically
+   observable: DROP and the nightly shed drop walk items in insertion order, so when shed
+   room runs out, first-inserted items win and the rest are discarded. [order] mirrors
+   that key order — it lists the items with nonzero count, oldest first. Zero-count items
+   never appear (upstream deletes keys the moment they reach zero). *)
 type inventory =
   { counts : int array (* shed_item_count *)
   ; mutable order : int array
@@ -235,12 +217,12 @@ type inventory =
 
 type private_state =
   { shed : int array
-    (* shed_item_count; upstream keeps every key present from initialization
-       onward, so a plain array in table order is exact *)
+      (* shed_item_count; upstream keeps every key present from initialization onward, so
+         a plain array in table order is exact *)
   ; seeds : int array (* crop_count; consumed directly by PLANT *)
   ; mutable inventories : inventory array
-    (* slot 0 is the main farmer, slots 1+ are hands; always exactly
-       1 + Array.length hands entries *)
+  (* slot 0 is the main farmer, slots 1+ are hands; always exactly 1 + Array.length hands
+     entries *)
   }
 
 type state =
@@ -267,10 +249,10 @@ type direction =
   | East
   | West
 
-(* The unit operations implemented so far. Upstream treats malformed or
-   inapplicable actions as silent no-ops; this typed surface cannot express
-   malformed ones — mapping raw JSON tapes (including deliberately malformed
-   fuzz) onto it is the differential runner's job. *)
+(* The unit operations implemented so far. Upstream treats malformed or inapplicable
+   actions as silent no-ops; this typed surface cannot express malformed ones — mapping
+   raw JSON tapes (including deliberately malformed fuzz) onto it is the differential
+   runner's job. *)
 type unit_op =
   | Unit_pass
   | Move of direction
@@ -322,9 +304,9 @@ type player_action =
 
 let pass_action = { farmer = Unit_pass; hands = [||]; market = [||] }
 
-(* A zero-copy read-only view: the arrays alias live state, which is what a
-   rollout policy wants. [obs_step] follows the framework convention of
-   resetting to zero once the episode is done. *)
+(* A zero-copy read-only view: the arrays alias live state, which is what a rollout policy
+   wants. [obs_step] follows the framework convention of resetting to zero once the
+   episode is done. *)
 type observation =
   { obs_player : int
   ; obs_step : int
@@ -346,22 +328,26 @@ let quadrant_of ~board_size x y =
   | true, false -> 1 (* NE *)
   | false, true -> 2 (* SW *)
   | false, false -> 3 (* SE *)
+;;
 
-(* Upstream spawns on the first shed-access tile inside NW, which is always
-   the inner corner (half-1, half-1). *)
+(* Upstream spawns on the first shed-access tile inside NW, which is always the inner
+   corner (half-1, half-1). *)
 let default_spawn ~board_size =
   let half = board_size / 2 in
   half - 1, half - 1
+;;
 
-(* The four inner-corner tiles around the shed, in the NWSE order upstream
-   uses for spawn preference and hire tie-breaking. *)
+(* The four inner-corner tiles around the shed, in the NWSE order upstream uses for spawn
+   preference and hire tie-breaking. *)
 let shed_access_tiles ~board_size =
   let half = board_size / 2 in
   [| half - 1, half - 1; half, half - 1; half - 1, half; half, half |]
+;;
 
 let is_shed_adjacent ~board_size x y =
   let half = board_size / 2 in
   (x = half - 1 || x = half) && (y = half - 1 || y = half)
+;;
 
 let new_inventory () = { counts = Array.make shed_item_count 0; order = [||] }
 
@@ -369,8 +355,8 @@ let initial_state config =
   if config.episode_steps < 2 then invalid_arg "episodeSteps must be at least 2";
   if config.board_size < 4
   then invalid_arg "boardSize below the specification minimum of 4";
-  (* Upstream clamps these with max(1, ...) at every use site; normalizing
-     once here keeps the stored config equal to the effective one. *)
+  (* Upstream clamps these with max(1, ...) at every use site; normalizing once here keeps
+     the stored config equal to the effective one. *)
   let clamp1 value = max 1 value in
   let config =
     { config with
@@ -425,50 +411,54 @@ let initial_state config =
   ; hour = 0
   ; status = Active
   }
+;;
 
 let copy_inventory inventory =
   { counts = Array.copy inventory.counts; order = Array.copy inventory.order }
+;;
 
 let copy state =
   { state with
     farms =
       Array.map
         (fun (farm : farm) ->
-           { farm with
-             tiles =
-               Array.map
-                 (function
-                   (* [with] on an unchanged field just forces a fresh record *)
-                   | Plant plant -> Plant { plant with crop = plant.crop }
-                   | Animal animal -> Animal { animal with animal = animal.animal }
-                   | tile -> tile)
-                 farm.tiles
-           ; hands = Array.copy farm.hands
-           })
+          { farm with
+            tiles =
+              Array.map
+                (function
+                  (* [with] on an unchanged field just forces a fresh record *)
+                  | Plant plant -> Plant { plant with crop = plant.crop }
+                  | Animal animal -> Animal { animal with animal = animal.animal }
+                  | tile -> tile)
+                farm.tiles
+          ; hands = Array.copy farm.hands
+          })
         state.farms
   ; privates =
       Array.map
         (fun p ->
-           { shed = Array.copy p.shed
-           ; seeds = Array.copy p.seeds
-           ; inventories = Array.map copy_inventory p.inventories
-           })
+          { shed = Array.copy p.shed
+          ; seeds = Array.copy p.seeds
+          ; inventories = Array.map copy_inventory p.inventories
+          })
         state.privates
   ; market_inventory = Array.copy state.market_inventory
   ; market_prices = Array.copy state.market_prices
   ; town_shops = Array.copy state.town_shops
   }
+;;
 
 (* ---------------- inventory and shed helpers ---------------- *)
 
 let shed_total shed = Array.fold_left ( + ) 0 shed
 
 let inventory_add inventory item n =
-  (* n > 0 by every caller; a fresh key appends to the insertion order,
-     matching Python dict assignment. *)
+  (* n > 0 by every caller; a fresh key appends to the insertion order, matching Python
+     dict assignment. *)
   if inventory.counts.(item) = 0
   then inventory.order <- Array.append inventory.order [| item |];
   inventory.counts.(item) <- inventory.counts.(item) + n
+;;
 
 let inventory_remove inventory item n =
   (* n <= current count by every caller; deletion at zero removes the key. *)
@@ -477,23 +467,26 @@ let inventory_remove inventory item n =
   then
     inventory.order
     <- Array.of_list (List.filter (( <> ) item) (Array.to_list inventory.order))
+;;
 
 let inventory_clear inventory =
   Array.fill inventory.counts 0 shed_item_count 0;
   inventory.order <- [||]
+;;
 
-(* Empty every item of [inventory] into [shed] in insertion order, respecting
-   [capacity]; overflow is discarded with the inventory (upstream DROP and the
-   nightly drop share this exact shape). *)
+(* Empty every item of [inventory] into [shed] in insertion order, respecting [capacity];
+   overflow is discarded with the inventory (upstream DROP and the nightly drop share this
+   exact shape). *)
 let drop_inventory_to_shed inventory shed ~capacity =
   Array.iter
     (fun item ->
-       let n = inventory.counts.(item) in
-       let room = max 0 (capacity - shed_total shed) in
-       let take = min n room in
-       if take > 0 then shed.(item) <- shed.(item) + take)
+      let n = inventory.counts.(item) in
+      let room = max 0 (capacity - shed_total shed) in
+      let take = min n room in
+      if take > 0 then shed.(item) <- shed.(item) + take)
     inventory.order;
   inventory_clear inventory
+;;
 
 (* ---------------- unit actions ---------------- *)
 
@@ -511,6 +504,7 @@ let new_plant ~crop ~day ~turns_per_day =
        else (day + crop_max_yield_day.(crop) + 1) * turns_per_day)
   ; fertilized_until_day = -1
   }
+;;
 
 let apply_unit_action state ~player ~unit op =
   let farm = state.farms.(player) in
@@ -547,10 +541,9 @@ let apply_unit_action state ~player ~unit op =
        in
        let nx = x + dx
        and ny = y + dy in
-       (* Movement onto Locked tiles is allowed upstream: a hand can spawn on
-          a locked shed-access tile, and blocking movement would strand it. *)
-       if nx >= 0 && nx < board_size && ny >= 0 && ny < board_size
-       then set_position nx ny
+       (* Movement onto Locked tiles is allowed upstream: a hand can spawn on a locked
+          shed-access tile, and blocking movement would strand it. *)
+       if nx >= 0 && nx < board_size && ny >= 0 && ny < board_size then set_position nx ny
      | Drop ->
        if is_shed_adjacent ~board_size x y
        then drop_inventory_to_shed inventory private_state.shed ~capacity
@@ -563,15 +556,14 @@ let apply_unit_action state ~player ~unit op =
            private_state.shed.(item) <- private_state.shed.(item) - n;
            inventory_add inventory item n))
      | Place { item; count } ->
-       (* Animal placement first: standing on a matching unoccupied structure.
-          Upstream returns from this branch whether or not the inventory take
-          succeeds — it never falls through to the shed path from a matching
-          structure. Otherwise, shed drop under adjacency and capacity. *)
+       (* Animal placement first: standing on a matching unoccupied structure. Upstream
+          returns from this branch whether or not the inventory take succeeds — it never
+          falls through to the shed path from a matching structure. Otherwise, shed drop
+          under adjacency and capacity. *)
        let tile = farm.tiles.((y * board_size) + x) in
        (match tile with
         | Structure kind
-          when item >= product_count && kind = animal_structure.(item - product_count)
-          ->
+          when item >= product_count && kind = animal_structure.(item - product_count) ->
           if inventory.counts.(item) > 0
           then (
             inventory_remove inventory item 1;
@@ -598,11 +590,19 @@ let apply_unit_action state ~player ~unit op =
               then (
                 inventory_remove inventory item n;
                 private_state.shed.(item) <- private_state.shed.(item) + n))))
-     | Plant_crop _ | Water | Harvest | Fertilize | Dig | Build_coop | Build_pasture
-     | Feed | Care | Collect_fertilizer ->
-       (* Everything below mutates the tile the unit stands on, so upstream
-          requires that tile to be owned. state.day equals upstream's pre-turn
-          day (the transition counter has not been incremented yet). *)
+     | Plant_crop _
+     | Water
+     | Harvest
+     | Fertilize
+     | Dig
+     | Build_coop
+     | Build_pasture
+     | Feed
+     | Care
+     | Collect_fertilizer ->
+       (* Everything below mutates the tile the unit stands on, so upstream requires that
+          tile to be owned. state.day equals upstream's pre-turn day (the transition
+          counter has not been incremented yet). *)
        let tile_index = (y * board_size) + x in
        let tile = farm.tiles.(tile_index) in
        let day = state.day in
@@ -614,8 +614,7 @@ let apply_unit_action state ~player ~unit op =
            then (
              private_state.seeds.(crop) <- private_state.seeds.(crop) - 1;
              farm.tiles.(tile_index)
-             <- Plant
-                  (new_plant ~crop ~day ~turns_per_day:state.config.turns_per_day))
+             <- Plant (new_plant ~crop ~day ~turns_per_day:state.config.turns_per_day))
          | Plant_crop _, _ -> ()
          | Water, Plant plant ->
            if not plant.watered_today
@@ -654,8 +653,7 @@ let apply_unit_action state ~player ~unit op =
              plant.fertilized_until_day <- max plant.fertilized_until_day (day + 2))
          | Fertilize, _ -> ()
          | Dig, (Weed | Plant _ | Structure _) ->
-           (* Removes plants, weeds, and empty structures; never a placed
-              animal. *)
+           (* Removes plants, weeds, and empty structures; never a placed animal. *)
            farm.tiles.(tile_index) <- Empty
          | Dig, _ -> ()
          | Build_coop, Empty -> farm.tiles.(tile_index) <- Structure 0
@@ -678,6 +676,7 @@ let apply_unit_action state ~player ~unit op =
          | Collect_fertilizer, _ -> ()
          | (Unit_pass | Move _ | Drop | Pickup _ | Place _), _ ->
            assert false (* handled by the outer match *)))
+;;
 
 (* ---------------- market pricing ---------------- *)
 
@@ -696,6 +695,7 @@ let shape_value func x ~t =
     else (
       let u = x /. t in
       u +. (hinge_gain *. (Float.max 0.0 (u -. 1.0) ** 2.0)))
+;;
 
 (* CPython's round(float): nearest integer, ties to even. *)
 let python_round x =
@@ -708,6 +708,7 @@ let python_round x =
   else if Float.rem floor_x 2.0 = 0.0
   then floor_x
   else floor_x +. 1.0
+;;
 
 let market_price state item ~inventory =
   let curve = state.market_curves.(item) in
@@ -726,12 +727,14 @@ let market_price state item ~inventory =
       base -. (amp *. shape_value func (float_of_int (inventory - i0)) ~t))
   in
   max price_floor (int_of_float (python_round price))
+;;
 
 let refresh_prices state =
   for item = 0 to product_count - 1 do
     state.market_prices.(item)
     <- market_price state item ~inventory:state.market_inventory.(item)
   done
+;;
 
 (* ---------------- market orders ---------------- *)
 
@@ -745,17 +748,19 @@ let fib n =
     b := next
   done;
   !a
+;;
 
 let hire_cost ~hires_today ~mult = mult * fib hires_today
 
-(* First free shed-access tile in NWSE order; ties broken by minimum
-   occupancy (farmer plus existing hands). *)
+(* First free shed-access tile in NWSE order; ties broken by minimum occupancy (farmer
+   plus existing hands). *)
 let spawn_hand farm ~board_size =
   let access = shed_access_tiles ~board_size in
   let occupancy = Array.make 4 0 in
   let count_occupant (x, y) =
     Array.iteri
-      (fun index (ax, ay) -> if x = ax && y = ay then occupancy.(index) <- occupancy.(index) + 1)
+      (fun index (ax, ay) ->
+        if x = ax && y = ay then occupancy.(index) <- occupancy.(index) + 1)
       access
   in
   count_occupant (farm.farmer_x, farm.farmer_y);
@@ -765,6 +770,7 @@ let spawn_hand farm ~board_size =
     if occupancy.(index) < occupancy.(!best) then best := index
   done;
   access.(!best)
+;;
 
 let do_buy_land state ~player =
   let farm = state.farms.(player) in
@@ -781,11 +787,12 @@ let do_buy_land state ~player =
       let board_size = state.config.board_size in
       Array.iteri
         (fun index tile ->
-           if tile = Locked
-              && quadrant_of ~board_size (index mod board_size) (index / board_size)
-                 = quadrant
-           then farm.tiles.(index) <- Empty)
+          if tile = Locked
+             && quadrant_of ~board_size (index mod board_size) (index / board_size)
+                = quadrant
+          then farm.tiles.(index) <- Empty)
         farm.tiles))
+;;
 
 let do_hire state ~player =
   let farm = state.farms.(player) in
@@ -801,18 +808,18 @@ let do_hire state ~player =
     <- Array.append farm.hands [| spawn_hand farm ~board_size:state.config.board_size |];
     private_state.inventories
     <- Array.append private_state.inventories [| new_inventory () |])
+;;
 
-(* Per-unit lockstep, exactly upstream's two phases per unit: quote both
-   players' current orders from the same pre-commit market inventory, then
-   commit both in player order. Money or stock exhaustion aborts an order at
-   exactly the same unit as upstream; prices refresh after every order
-   index. *)
+(* Per-unit lockstep, exactly upstream's two phases per unit: quote both players' current
+   orders from the same pre-commit market inventory, then commit both in player order.
+   Money or stock exhaustion aborts an order at exactly the same unit as upstream; prices
+   refresh after every order index. *)
 let process_market state (actions : player_action array) =
   let max_orders = state.config.max_market_orders_per_turn in
   let queues =
     Array.map
       (fun action ->
-         Array.sub action.market 0 (min max_orders (Array.length action.market)))
+        Array.sub action.market 0 (min max_orders (Array.length action.market)))
       actions
   in
   let max_len = Array.fold_left (fun acc q -> max acc (Array.length q)) 0 queues in
@@ -822,23 +829,23 @@ let process_market state (actions : player_action array) =
   for index = 0 to max_len - 1 do
     Array.iteri
       (fun player queue ->
-         kinds.(player) <- None;
-         if index < Array.length queue
-         then (
-           match queue.(index) with
-           | Hire ->
-             (* Atomic orders resolve once, in player order, before lockstep. *)
-             do_hire state ~player
-           | Buy_land -> do_buy_land state ~player
-           | Buy_seed { count; _ }
-           | Buy_animal { count; _ }
-           | Sell { count; _ }
-           | Buy_product { count; _ } ->
-             (* Upstream _parse_order rejects n <= 0 as malformed. *)
-             if count > 0
-             then (
-               kinds.(player) <- Some queue.(index);
-               remaining.(player) <- count)))
+        kinds.(player) <- None;
+        if index < Array.length queue
+        then (
+          match queue.(index) with
+          | Hire ->
+            (* Atomic orders resolve once, in player order, before lockstep. *)
+            do_hire state ~player
+          | Buy_land -> do_buy_land state ~player
+          | Buy_seed { count; _ }
+          | Buy_animal { count; _ }
+          | Sell { count; _ }
+          | Buy_product { count; _ } ->
+            (* Upstream _parse_order rejects n <= 0 as malformed. *)
+            if count > 0
+            then (
+              kinds.(player) <- Some queue.(index);
+              remaining.(player) <- count)))
       queues;
     let progressing = ref true in
     while !progressing do
@@ -858,8 +865,8 @@ let process_market state (actions : player_action array) =
               | Sell { item; _ } ->
                 market_price state item ~inventory:state.market_inventory.(item)
               | Buy_product { item; _ } ->
-                (* Quoted at post-buy inventory so a buy/sell round-trip
-                   against an unchanged market nets zero. *)
+                (* Quoted at post-buy inventory so a buy/sell round-trip against an
+                   unchanged market nets zero. *)
                 market_price state item ~inventory:(state.market_inventory.(item) - 1))
       done;
       if not !quoted_any
@@ -925,132 +932,132 @@ let process_market state (actions : player_action array) =
     done;
     refresh_prices state
   done
+;;
 
 (* ---------------- decay and end of day ---------------- *)
 
 (* Overripe decay, every turn: once past max_lifespan_step, a non-ongoing (or
-   final-production ongoing) plant loses one unit every second step, then
-   turns to weed. [step] is the pre-increment transition counter. *)
+   final-production ongoing) plant loses one unit every second step, then turns to weed.
+   [step] is the pre-increment transition counter. *)
 let decay_plants state ~step =
   Array.iter
     (fun (farm : farm) ->
-       Array.iteri
-         (fun index tile ->
-            match tile with
-            | Plant plant ->
-              let mls = plant.max_lifespan_step in
-              if mls >= 0 && step >= mls && (step - mls) mod 2 = 0
-              then (
-                plant.yield_units <- plant.yield_units - 1;
-                if plant.yield_units <= 0 then farm.tiles.(index) <- Weed)
-            | _ -> ())
-         farm.tiles)
+      Array.iteri
+        (fun index tile ->
+          match tile with
+          | Plant plant ->
+            let mls = plant.max_lifespan_step in
+            if mls >= 0 && step >= mls && (step - mls) mod 2 = 0
+            then (
+              plant.yield_units <- plant.yield_units - 1;
+              if plant.yield_units <= 0 then farm.tiles.(index) <- Weed)
+          | _ -> ())
+        farm.tiles)
     state.farms
+;;
 
-(* The nightly plant pass: watering bookkeeping (two consecutive unwatered
-   days -> weed), then the ongoing-crop production schedule. [day] is the day
-   just ended. *)
+(* The nightly plant pass: watering bookkeeping (two consecutive unwatered days -> weed),
+   then the ongoing-crop production schedule. [day] is the day just ended. *)
 let daily_refresh_plants farm ~day ~turns_per_day =
   let next_day = day + 1 in
   Array.iteri
     (fun index tile ->
-       match tile with
-       | Plant plant ->
-         let was_watered = plant.watered_today in
-         if was_watered
-         then plant.consecutive_unwatered <- 0
-         else plant.consecutive_unwatered <- plant.consecutive_unwatered + 1;
-         plant.watered_today <- false;
-         if plant.consecutive_unwatered >= 2
-         then farm.tiles.(index) <- Weed
-         else if crop_ongoing.(plant.crop)
-         then (
-           let days_since_first =
-             next_day - plant.planted_day - crop_first_yield_day.(plant.crop)
-           in
-           let interval = crop_interval.(plant.crop) in
-           if days_since_first >= 0 && days_since_first mod interval = 0
-           then (
-             let production_count = (days_since_first / interval) + 1 in
-             if production_count <= crop_max_yield.(plant.crop)
-             then (
-               (* Fertilizer bonus only applies on watered days. *)
-               let fertilized = was_watered && plant.fertilized_until_day >= day in
-               plant.yield_units
-               <- min
-                    crop_max_yield.(plant.crop)
-                    (plant.yield_units + if fertilized then 2 else 1);
-               if production_count = crop_max_yield.(plant.crop)
-               then plant.max_lifespan_step <- (next_day + 1) * turns_per_day)))
-       | _ -> ())
+      match tile with
+      | Plant plant ->
+        let was_watered = plant.watered_today in
+        if was_watered
+        then plant.consecutive_unwatered <- 0
+        else plant.consecutive_unwatered <- plant.consecutive_unwatered + 1;
+        plant.watered_today <- false;
+        if plant.consecutive_unwatered >= 2
+        then farm.tiles.(index) <- Weed
+        else if crop_ongoing.(plant.crop)
+        then (
+          let days_since_first =
+            next_day - plant.planted_day - crop_first_yield_day.(plant.crop)
+          in
+          let interval = crop_interval.(plant.crop) in
+          if days_since_first >= 0 && days_since_first mod interval = 0
+          then (
+            let production_count = (days_since_first / interval) + 1 in
+            if production_count <= crop_max_yield.(plant.crop)
+            then (
+              (* Fertilizer bonus only applies on watered days. *)
+              let fertilized = was_watered && plant.fertilized_until_day >= day in
+              plant.yield_units
+              <- min
+                   crop_max_yield.(plant.crop)
+                   (plant.yield_units + if fertilized then 2 else 1);
+              if production_count = crop_max_yield.(plant.crop)
+              then plant.max_lifespan_step <- (next_day + 1) * turns_per_day)))
+      | _ -> ())
     farm.tiles
+;;
 
-(* The nightly animal pass: feeding bookkeeping (two consecutive unfed days
-   and the animal escapes, leaving its structure), then the production
-   schedule with the care bonus, then the daily flag resets. *)
+(* The nightly animal pass: feeding bookkeeping (two consecutive unfed days and the animal
+   escapes, leaving its structure), then the production schedule with the care bonus, then
+   the daily flag resets. *)
 let daily_refresh_animals farm ~day =
   let next_day = day + 1 in
   Array.iteri
     (fun index tile ->
-       match tile with
-       | Animal animal ->
-         if animal.fed_today
-         then animal.consecutive_unfed <- 0
-         else animal.consecutive_unfed <- animal.consecutive_unfed + 1;
-         if animal.consecutive_unfed >= 2
-         then farm.tiles.(index) <- Structure animal_structure.(animal.animal)
-         else (
-           let days_since_first =
-             next_day - animal.placed_day - animal_first_yield_day.(animal.animal)
-           in
-           if days_since_first >= 0
-              && days_since_first mod animal_interval.(animal.animal) = 0
-           then (
-             (* Care bonus only consumed on a fed production day. *)
-             let bonus = if animal.fed_today then animal.pending_care_bonus else 0 in
-             animal.yield_units
-             <- min animal_max_held.(animal.animal) (animal.yield_units + 1 + bonus);
-             animal.pending_care_bonus <- 0);
-           if animal.cared_today && animal.fed_today
-           then animal.pending_care_bonus <- animal.pending_care_bonus + 1;
-           animal.fertilizer_available <- true;
-           animal.fed_today <- false;
-           animal.cared_today <- false)
-       | _ -> ())
+      match tile with
+      | Animal animal ->
+        if animal.fed_today
+        then animal.consecutive_unfed <- 0
+        else animal.consecutive_unfed <- animal.consecutive_unfed + 1;
+        if animal.consecutive_unfed >= 2
+        then farm.tiles.(index) <- Structure animal_structure.(animal.animal)
+        else (
+          let days_since_first =
+            next_day - animal.placed_day - animal_first_yield_day.(animal.animal)
+          in
+          if days_since_first >= 0
+             && days_since_first mod animal_interval.(animal.animal) = 0
+          then (
+            (* Care bonus only consumed on a fed production day. *)
+            let bonus = if animal.fed_today then animal.pending_care_bonus else 0 in
+            animal.yield_units
+            <- min animal_max_held.(animal.animal) (animal.yield_units + 1 + bonus);
+            animal.pending_care_bonus <- 0);
+          if animal.cared_today && animal.fed_today
+          then animal.pending_care_bonus <- animal.pending_care_bonus + 1;
+          animal.fertilizer_available <- true;
+          animal.fed_today <- false;
+          animal.cared_today <- false)
+      | _ -> ())
     farm.tiles
+;;
 
 let end_of_day state =
   let board_size = state.config.board_size in
   let spawn_x, spawn_y = default_spawn ~board_size in
   (* Stable RNG keyed off the resolved seed and the day, exactly upstream's
-     random.Random((seed * 1_000_003) ^ day). One generator serves both
-     players' weed draws and then the shop unlock, in that order. *)
-  let rng = Python_random.create ((state.resolved_seed * 1_000_003) lxor state.day) in
+     random.Random((seed * 1_000_003) ^ day). One generator serves both players' weed
+     draws and then the shop unlock, in that order. *)
+  let rng = Python_random.create (state.resolved_seed * 1_000_003 lxor state.day) in
   for player = 0 to player_count - 1 do
     let farm = state.farms.(player) in
     let private_state = state.privates.(player) in
-    daily_refresh_plants
-      farm
-      ~day:state.day
-      ~turns_per_day:state.config.turns_per_day;
+    daily_refresh_plants farm ~day:state.day ~turns_per_day:state.config.turns_per_day;
     daily_refresh_animals farm ~day:state.day;
-    (* Weed spawn: one draw per empty tile in row-major order — the draws are
-       consumed even when weedSpawnChance is 0, which matters for everything
-       the generator serves afterwards. *)
+    (* Weed spawn: one draw per empty tile in row-major order — the draws are consumed
+       even when weedSpawnChance is 0, which matters for everything the generator serves
+       afterwards. *)
     Array.iteri
       (fun index tile ->
-         match tile with
-         | Empty ->
-           if Python_random.random rng < state.config.weed_spawn_chance
-           then farm.tiles.(index) <- Weed
-         | _ -> ())
+        match tile with
+        | Empty ->
+          if Python_random.random rng < state.config.weed_spawn_chance
+          then farm.tiles.(index) <- Weed
+        | _ -> ())
       farm.tiles;
     Array.iter
       (fun inventory ->
-         drop_inventory_to_shed
-           inventory
-           private_state.shed
-           ~capacity:state.config.shed_capacity)
+        drop_inventory_to_shed
+          inventory
+          private_state.shed
+          ~capacity:state.config.shed_capacity)
       private_state.inventories;
     farm.farmer_x <- spawn_x;
     farm.farmer_y <- spawn_y;
@@ -1058,14 +1065,15 @@ let end_of_day state =
     farm.hires_today <- 0;
     private_state.inventories <- [| new_inventory () |]
   done;
-  (* Shop unlock: drawn with replacement from the sorted shop table; the same
-     shop can unlock repeatedly, capped at max_shop_instances total. *)
+  (* Shop unlock: drawn with replacement from the sorted shop table; the same shop can
+     unlock repeatedly, capped at max_shop_instances total. *)
   let next_day = state.day + 1 in
   if next_day mod state.config.town_shop_unlock_interval = 0
      && state.town_shop_count < max_shop_instances
   then (
     state.town_shops.(state.town_shop_count) <- Python_random.choice rng shop_indices;
     state.town_shop_count <- state.town_shop_count + 1)
+;;
 
 (* ---------------- the transition ---------------- *)
 
@@ -1074,31 +1082,31 @@ let step state (action0 : player_action) (action1 : player_action) =
   let actions = [| action0; action1 |] in
   Array.iteri
     (fun player action ->
-       (* Atomic PLANT validation: if this player's total PLANT requests for a
-          crop (farmer plus every hand entry, existent or not) exceed the
-          seeds on hand, ALL PLANT requests for that crop become PASS. *)
-       let demand = Array.make crop_count 0 in
-       let count_demand = function
-         | Plant_crop { crop } -> demand.(crop) <- demand.(crop) + 1
-         | _ -> ()
-       in
-       count_demand action.farmer;
-       Array.iter count_demand action.hands;
-       let seeds = state.privates.(player).seeds in
-       let allowed = function
-         | Plant_crop { crop } when demand.(crop) > seeds.(crop) -> Unit_pass
-         | op -> op
-       in
-       apply_unit_action state ~player ~unit:0 (allowed action.farmer);
-       Array.iteri
-         (fun hand_index op ->
-            apply_unit_action state ~player ~unit:(hand_index + 1) (allowed op))
-         action.hands)
+      (* Atomic PLANT validation: if this player's total PLANT requests for a crop (farmer
+         plus every hand entry, existent or not) exceed the seeds on hand, ALL PLANT
+         requests for that crop become PASS. *)
+      let demand = Array.make crop_count 0 in
+      let count_demand = function
+        | Plant_crop { crop } -> demand.(crop) <- demand.(crop) + 1
+        | _ -> ()
+      in
+      count_demand action.farmer;
+      Array.iter count_demand action.hands;
+      let seeds = state.privates.(player).seeds in
+      let allowed = function
+        | Plant_crop { crop } when demand.(crop) > seeds.(crop) -> Unit_pass
+        | op -> op
+      in
+      apply_unit_action state ~player ~unit:0 (allowed action.farmer);
+      Array.iteri
+        (fun hand_index op ->
+          apply_unit_action state ~player ~unit:(hand_index + 1) (allowed op))
+        action.hands)
     actions;
   process_market state actions;
-  (* Town consumption (upstream _town_consume): unlocked-shop instances first
-     (each instance consumes independently; single-product shops pull double),
-     then the town-center tick, then a price refresh. *)
+  (* Town consumption (upstream _town_consume): unlocked-shop instances first (each
+     instance consumes independently; single-product shops pull double), then the
+     town-center tick, then a price refresh. *)
   if state.transitions mod state.config.town_shop_sell_interval = 0
   then
     for shop = 0 to state.town_shop_count - 1 do
@@ -1106,7 +1114,7 @@ let step state (action0 : player_action) (action1 : player_action) =
       let multiplier = if Array.length products = 1 then 2 else 1 in
       Array.iter
         (fun item ->
-           state.market_inventory.(item) <- state.market_inventory.(item) - multiplier)
+          state.market_inventory.(item) <- state.market_inventory.(item) - multiplier)
         products
     done;
   if state.transitions mod state.config.town_center_sell_interval = 0
@@ -1121,14 +1129,15 @@ let step state (action0 : player_action) (action1 : player_action) =
   state.transitions <- state.transitions + 1;
   state.day <- state.transitions / state.config.turns_per_day;
   state.hour <- state.transitions mod state.config.turns_per_day;
-  (* The interpreter sees prior observation steps 0..episodeSteps-2. It marks
-     DONE while processing episodeSteps-2, producing episodeSteps-1 transitions. *)
+  (* The interpreter sees prior observation steps 0..episodeSteps-2. It marks DONE while
+     processing episodeSteps-2, producing episodeSteps-1 transitions. *)
   if state.transitions >= state.config.episode_steps - 1 then state.status <- Done
+;;
 
 let observe state ~player =
   if player < 0 || player >= player_count then invalid_arg "player must be 0 or 1";
-  { obs_player = player
-    (* The framework zeroes the shared step counter once the episode is done. *)
+  { obs_player =
+      player (* The framework zeroes the shared step counter once the episode is done. *)
   ; obs_step = (if state.status = Done then 0 else state.transitions)
   ; obs_day = state.day
   ; obs_hour = state.hour
@@ -1140,19 +1149,17 @@ let observe state ~player =
   ; obs_town_shops = state.town_shops
   ; obs_town_shop_count = state.town_shop_count
   }
+;;
 
-(* Upstream rewards stay 0 until the terminal turn assigns each player their
-   bank balance. *)
-let reward state ~player =
-  if state.status = Done then state.farms.(player).money else 0.0
+(* Upstream rewards stay 0 until the terminal turn assigns each player their bank balance. *)
+let reward state ~player = if state.status = Done then state.farms.(player).money else 0.0
 
 type result =
   { final_money : float array
   ; result_transitions : int
   }
 
-(* The only policy the slice supports; a real policy type arrives once
-   research needs one. *)
+(* The only policy the slice supports; a real policy type arrives once research needs one. *)
 let run_game config =
   let state = initial_state config in
   while state.status = Active do
@@ -1161,3 +1168,4 @@ let run_game config =
   { final_money = Array.map (fun farm -> farm.money) state.farms
   ; result_transitions = state.transitions
   }
+;;

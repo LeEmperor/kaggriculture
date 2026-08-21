@@ -1,6 +1,10 @@
 """Single-tile monoculture loop driven by a reorder-point inventory rule.
 
 v1 pins ``crop`` to WHEAT; the algorithm itself is crop-generic.
+
+Exists as a reference model for what old python-only policies looked like.
+
+Tags: DO_NOT_DELETE
 """
 
 from __future__ import annotations

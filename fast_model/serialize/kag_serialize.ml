@@ -1,12 +1,10 @@
-(* Canonical JSON projections of the model state, matching the shapes the
-   oracle adapter records (reference/oracle.py): [diagnostic] mirrors
-   diagnostic_state, [observation] mirrors player_observation minus
-   remainingOverageTime (framework timing, excluded from differential scope —
-   the fixture recorder strips it too).
+(* Canonical JSON projections of the model state, matching the shapes the oracle adapter
+   records (reference/oracle.py): [diagnostic] mirrors diagnostic_state, [observation]
+   mirrors player_observation minus remainingOverageTime (framework timing, excluded from
+   differential scope — the fixture recorder strips it too).
 
-   This module owns every index→name conversion; the engine stores only
-   integers and variants. Comparisons should go through [normalize] so key
-   order never matters. *)
+   This module owns every index→name conversion; the engine stores only integers and
+   variants. Comparisons should go through [normalize] so key order never matters. *)
 
 open Kag_model
 
@@ -22,14 +20,13 @@ let product_names =
    ; "WOOL"
    ; "FERTILIZER"
   |]
+;;
 
 let animal_names = [| "GOOSE"; "COW"; "SHEEP" |]
-
 let structure_names = [| "COOP"; "PASTURE" |]
 
 (* Shed items are products then animals, matching Model.shed_item_count. *)
 let shed_item_names = Array.append product_names animal_names
-
 let quadrant_names = [| "NW"; "NE"; "SW"; "SE" |]
 
 (* sorted(SHOPS) — the order rng.choice draws from at shop-unlock time. *)
@@ -43,6 +40,7 @@ let shop_names =
    ; "SMOOTHIE_SHOP"
    ; "YARN_STORE"
   |]
+;;
 
 let json_of_tile (tile : Model.tile) : Yojson.Safe.t =
   match tile with
@@ -63,8 +61,7 @@ let json_of_tile (tile : Model.tile) : Yojson.Safe.t =
   | Model.Structure kind -> `Assoc [ "kind", `String structure_names.(kind) ]
   | Model.Animal animal ->
     `Assoc
-      [ ( "kind"
-        , `String structure_names.(Model.animal_structure.(animal.Model.animal)) )
+      [ "kind", `String structure_names.(Model.animal_structure.(animal.Model.animal))
       ; "animal", `String animal_names.(animal.Model.animal)
       ; "placed_day", `Int animal.Model.placed_day
       ; "yield_units", `Int animal.Model.yield_units
@@ -74,6 +71,7 @@ let json_of_tile (tile : Model.tile) : Yojson.Safe.t =
       ; "fertilizer_available", `Bool animal.Model.fertilizer_available
       ; "pending_care_bonus", `Int animal.Model.pending_care_bonus
       ]
+;;
 
 let json_of_position x y : Yojson.Safe.t = `List [ `Int x; `Int y ]
 
@@ -93,17 +91,18 @@ let json_of_farm ~board_size (farm : Model.farm) : Yojson.Safe.t =
              (Array.map (fun (x, y) -> json_of_position x y) farm.Model.hands)) )
     ; ( "unlocked_quadrants"
       , `List
-          (List.init farm.Model.unlocked_quadrants (fun i ->
-             `String quadrant_names.(i))) )
+          (List.init farm.Model.unlocked_quadrants (fun i -> `String quadrant_names.(i)))
+      )
     ; "hires_today", `Int farm.Model.hires_today
     ]
+;;
 
 let json_of_counts names counts : Yojson.Safe.t =
   `Assoc (Array.to_list (Array.mapi (fun i name -> name, `Int counts.(i)) names))
+;;
 
-(* Upstream inventory dicts hold only nonzero entries (zero-count keys are
-   deleted on the spot). Emitted in table order; comparisons normalize key
-   order anyway. *)
+(* Upstream inventory dicts hold only nonzero entries (zero-count keys are deleted on the
+   spot). Emitted in table order; comparisons normalize key order anyway. *)
 let json_of_inventory (inventory : Model.inventory) : Yojson.Safe.t =
   let entries = ref [] in
   for i = Array.length inventory.Model.counts - 1 downto 0 do
@@ -111,6 +110,7 @@ let json_of_inventory (inventory : Model.inventory) : Yojson.Safe.t =
     then entries := (shed_item_names.(i), `Int inventory.Model.counts.(i)) :: !entries
   done;
   `Assoc !entries
+;;
 
 let json_of_private (p : Model.private_state) : Yojson.Safe.t =
   `Assoc
@@ -119,14 +119,16 @@ let json_of_private (p : Model.private_state) : Yojson.Safe.t =
     ; ( "inventories"
       , `List (Array.to_list (Array.map json_of_inventory p.Model.inventories)) )
     ]
+;;
 
-(* No "params" key: it appears upstream only under marketParams overrides,
-   which the model deliberately cannot represent yet. *)
+(* No "params" key: it appears upstream only under marketParams overrides, which the model
+   deliberately cannot represent yet. *)
 let json_of_market (state : Model.state) : Yojson.Safe.t =
   `Assoc
     [ "inventory", json_of_counts product_names state.Model.market_inventory
     ; "prices", json_of_counts product_names state.Model.market_prices
     ]
+;;
 
 let json_of_town (state : Model.state) : Yojson.Safe.t =
   `Assoc
@@ -135,21 +137,21 @@ let json_of_town (state : Model.state) : Yojson.Safe.t =
           (List.init state.Model.town_shop_count (fun i ->
              `String shop_names.(state.Model.town_shops.(i)))) )
     ]
+;;
 
 let diagnostic (state : Model.state) : Yojson.Safe.t =
   let board_size = state.Model.config.Model.board_size in
   `Assoc
     [ ( "farms"
-      , `List (Array.to_list (Array.map (json_of_farm ~board_size) state.Model.farms))
-      )
+      , `List (Array.to_list (Array.map (json_of_farm ~board_size) state.Model.farms)) )
     ; "market", json_of_market state
     ; "town", json_of_town state
-    ; ( "privates"
-      , `List (Array.to_list (Array.map json_of_private state.Model.privates)) )
+    ; "privates", `List (Array.to_list (Array.map json_of_private state.Model.privates))
     ; "day", `Int state.Model.day
     ; "hour", `Int state.Model.hour
     ; "resolved_seed", `Int state.Model.resolved_seed
     ]
+;;
 
 let observation (state : Model.state) ~player : Yojson.Safe.t =
   let obs = Model.observe state ~player in
@@ -157,9 +159,7 @@ let observation (state : Model.state) ~player : Yojson.Safe.t =
   `Assoc
     [ "player", `Int obs.Model.obs_player
     ; ( "farms"
-      , `List
-          (Array.to_list (Array.map (json_of_farm ~board_size) obs.Model.obs_farms))
-      )
+      , `List (Array.to_list (Array.map (json_of_farm ~board_size) obs.Model.obs_farms)) )
     ; "private", json_of_private obs.Model.obs_private
     ; "market", json_of_market state
     ; "town", json_of_town state
@@ -167,12 +167,12 @@ let observation (state : Model.state) ~player : Yojson.Safe.t =
     ; "hour", `Int obs.Model.obs_hour
     ; "step", `Int obs.Model.obs_step
     ]
+;;
 
-(* The group-2 per-turn comparison: everything mutable by the implemented
-   rules except tiles (no implemented rule touches a tile, so tiles are
-   compared at initialization and episode end only) and the market/town state
-   (excluded until their rule groups land). The fixture recorder builds the
-   same projection from the oracle's diagnostic state. *)
+(* The group-2 per-turn comparison: everything mutable by the implemented rules except
+   tiles (no implemented rule touches a tile, so tiles are compared at initialization and
+   episode end only) and the market/town state (excluded until their rule groups land).
+   The fixture recorder builds the same projection from the oracle's diagnostic state. *)
 let turn_digest (state : Model.state) : Yojson.Safe.t =
   let nonzero_counts names counts : Yojson.Safe.t =
     let entries = ref [] in
@@ -183,8 +183,8 @@ let turn_digest (state : Model.state) : Yojson.Safe.t =
   in
   let board_size = state.Model.config.Model.board_size in
   let farm_digest (farm : Model.farm) : Yojson.Safe.t =
-    (* Sparse row-major projection of every tile that is not Empty/Locked —
-       harvests of non-ongoing crops and DIGs show up as absences. *)
+    (* Sparse row-major projection of every tile that is not Empty/Locked — harvests of
+       non-ongoing crops and DIGs show up as absences. *)
     let tiles = ref [] in
     for index = Array.length farm.Model.tiles - 1 downto 0 do
       match farm.Model.tiles.(index) with
@@ -204,32 +204,31 @@ let turn_digest (state : Model.state) : Yojson.Safe.t =
       ; "hires_today", `Int farm.Model.hires_today
       ; ( "unlocked_quadrants"
         , `List
-            (List.init farm.Model.unlocked_quadrants (fun i ->
-               `String quadrant_names.(i))) )
+            (List.init farm.Model.unlocked_quadrants (fun i -> `String quadrant_names.(i)))
+        )
       ; "tiles", `List !tiles
       ]
   in
   let private_digest (p : Model.private_state) : Yojson.Safe.t =
     `Assoc
       [ "shed", nonzero_counts shed_item_names p.Model.shed
-      ; ( "seeds"
-        , nonzero_counts (Array.sub product_names 0 Model.crop_count) p.Model.seeds )
+      ; "seeds", nonzero_counts (Array.sub product_names 0 Model.crop_count) p.Model.seeds
       ; ( "inventories"
         , `List (Array.to_list (Array.map json_of_inventory p.Model.inventories)) )
       ]
   in
   `Assoc
     [ "farms", `List (Array.to_list (Array.map farm_digest state.Model.farms))
-    ; ( "privates"
-      , `List (Array.to_list (Array.map private_digest state.Model.privates)) )
+    ; "privates", `List (Array.to_list (Array.map private_digest state.Model.privates))
     ]
+;;
 
 (* ---------------- action tapes ---------------- *)
 
-(* Map the upstream JSON action shapes onto the typed action surface. This is
-   deliberately strict: an op or item the model does not implement yet fails
-   loudly instead of no-opping, so a fixture tape cannot silently outrun the
-   engine. Malformed-action tolerance is the Phase 4 fuzz runner's concern. *)
+(* Map the upstream JSON action shapes onto the typed action surface. This is deliberately
+   strict: an op or item the model does not implement yet fails loudly instead of
+   no-opping, so a fixture tape cannot silently outrun the engine. Malformed-action
+   tolerance is the Phase 4 fuzz runner's concern. *)
 
 let index_of table name =
   let rec search i =
@@ -240,6 +239,7 @@ let index_of table name =
     else search (i + 1)
   in
   search 0
+;;
 
 let unit_op_of_json (json : Yojson.Safe.t) : Model.unit_op =
   let fail () =
@@ -285,6 +285,7 @@ let unit_op_of_json (json : Yojson.Safe.t) : Model.unit_op =
        Model.Place { item = index_of shed_item_names item; count }
      | _ -> fail ())
   | _ -> fail ()
+;;
 
 let market_order_of_json (json : Yojson.Safe.t) : Model.market_order =
   let fail () =
@@ -305,6 +306,7 @@ let market_order_of_json (json : Yojson.Safe.t) : Model.market_order =
     Model.Buy_product { item = index_of product_names item; count }
   | `List (`String "BUY_LAND" :: _) -> Model.Buy_land
   | _ -> fail ()
+;;
 
 let shape_of_name = function
   | "linear" -> Model.Linear
@@ -314,9 +316,10 @@ let shape_of_name = function
   | "log10" -> Model.Log10
   | "hinge" -> Model.Hinge
   | other -> failwith (Printf.sprintf "unknown market shape function %S" other)
+;;
 
-(* Parse a fully-resolved marketParams table (every product present, the
-   upstream _resolve_market_params output) into per-item curves. *)
+(* Parse a fully-resolved marketParams table (every product present, the upstream
+   _resolve_market_params output) into per-item curves. *)
 let market_curves_of_json (json : Yojson.Safe.t) : Model.market_curve array =
   let fields =
     match json with
@@ -336,35 +339,38 @@ let market_curves_of_json (json : Yojson.Safe.t) : Model.market_curve array =
   in
   Array.map
     (fun product ->
-       let entry =
-         match List.assoc_opt product fields with
-         | Some (`Assoc entry) -> entry
-         | _ -> failwith (Printf.sprintf "marketParams missing product %s" product)
-       in
-       let get name =
-         match List.assoc_opt name entry with
-         | Some value -> value
-         | None -> failwith (Printf.sprintf "marketParams %s missing %s" product name)
-       in
-       let shape name =
-         match get name with
-         | `String value -> shape_of_name value
-         | _ -> failwith "marketParams shape function must be a string"
-       in
-       { Model.base = to_int "base" (get "base")
-       ; i0 = to_int "I0" (get "I0")
-       ; t = to_int "T" (get "T")
-       ; below_func = shape "below_func"
-       ; below_target = to_float (get "below_target")
-       ; above_func = shape "above_func"
-       ; above_target = to_float (get "above_target")
-       })
+      let entry =
+        match List.assoc_opt product fields with
+        | Some (`Assoc entry) -> entry
+        | _ -> failwith (Printf.sprintf "marketParams missing product %s" product)
+      in
+      let get name =
+        match List.assoc_opt name entry with
+        | Some value -> value
+        | None -> failwith (Printf.sprintf "marketParams %s missing %s" product name)
+      in
+      let shape name =
+        match get name with
+        | `String value -> shape_of_name value
+        | _ -> failwith "marketParams shape function must be a string"
+      in
+      { Model.base = to_int "base" (get "base")
+      ; i0 = to_int "I0" (get "I0")
+      ; t = to_int "T" (get "T")
+      ; below_func = shape "below_func"
+      ; below_target = to_float (get "below_target")
+      ; above_func = shape "above_func"
+      ; above_target = to_float (get "above_target")
+      })
     product_names
+;;
 
 let player_action_of_json (json : Yojson.Safe.t) : Model.player_action =
   let member name =
     match json with
-    | `Assoc fields -> (try List.assoc name fields with Not_found -> `List [])
+    | `Assoc fields ->
+      (try List.assoc name fields with
+       | Not_found -> `List [])
     | _ -> failwith "player action tape entry must be an object"
   in
   let to_array f json =
@@ -376,6 +382,7 @@ let player_action_of_json (json : Yojson.Safe.t) : Model.player_action =
   ; hands = to_array unit_op_of_json (member "hands")
   ; market = to_array market_order_of_json (member "market")
   }
+;;
 
 (* Recursive key-sort so structural equality ignores object key order. *)
 let rec normalize (json : Yojson.Safe.t) : Yojson.Safe.t =
@@ -387,9 +394,10 @@ let rec normalize (json : Yojson.Safe.t) : Yojson.Safe.t =
          (List.map (fun (key, value) -> key, normalize value) fields))
   | `List items -> `List (List.map normalize items)
   | other -> other
+;;
 
-(* First differing path between two normalized documents — the seed of the
-   Phase 4 divergence report. *)
+(* First differing path between two normalized documents — the seed of the Phase 4
+   divergence report. *)
 let first_diff (a : Yojson.Safe.t) (b : Yojson.Safe.t) : string option =
   let shown json =
     let text = Yojson.Safe.to_string json in
@@ -410,9 +418,9 @@ let first_diff (a : Yojson.Safe.t) (b : Yojson.Safe.t) : string option =
       else
         List.fold_left2
           (fun acc (key, x) (_, y) ->
-             match acc with
-             | Some _ -> acc
-             | None -> walk (path ^ "." ^ key) x y)
+            match acc with
+            | Some _ -> acc
+            | None -> walk (path ^ "." ^ key) x y)
           None
           xs
           ys
@@ -428,9 +436,9 @@ let first_diff (a : Yojson.Safe.t) (b : Yojson.Safe.t) : string option =
       else
         List.fold_left2
           (fun (index, acc) x y ->
-             match acc with
-             | Some _ -> index + 1, acc
-             | None -> index + 1, walk (Printf.sprintf "%s[%d]" path index) x y)
+            match acc with
+            | Some _ -> index + 1, acc
+            | None -> index + 1, walk (Printf.sprintf "%s[%d]" path index) x y)
           (0, None)
           xs
           ys
@@ -441,3 +449,4 @@ let first_diff (a : Yojson.Safe.t) (b : Yojson.Safe.t) : string option =
       else Some (Printf.sprintf "%s: %s vs %s" path (shown a) (shown b))
   in
   walk "$" (normalize a) (normalize b)
+;;

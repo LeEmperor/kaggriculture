@@ -1,13 +1,13 @@
-(* Three suites: the model's reference facts, the rule-group-1 differential
-   comparison against oracle-recorded fixtures (model_group1_fixture.json —
-   regenerate with record_model_fixture.py, never by hand), and Python_random
-   against draws recorded from CPython itself (python_random_fixture.json).
+(* Three suites: the model's reference facts, the rule-group-1 differential comparison
+   against oracle-recorded fixtures (model_group1_fixture.json — regenerate with
+   record_model_fixture.py, never by hand), and Python_random against draws recorded from
+   CPython itself (python_random_fixture.json).
 
-   The RNG fixture stores floats as Python float.hex() strings and compares
-   exactly: bit-for-bit agreement is the entire point, an approximate MT19937
-   is worthless for differential replay. The model fixture is compared just as
-   strictly — canonicalized JSON equality at initialization, then per-turn
-   day/hour/step/status/reward across whole PASS episodes. *)
+   The RNG fixture stores floats as Python float.hex() strings and compares exactly:
+   bit-for-bit agreement is the entire point, an approximate MT19937 is worthless for
+   differential replay. The model fixture is compared just as strictly — canonicalized
+   JSON equality at initialization, then per-turn day/hour/step/status/reward across whole
+   PASS episodes. *)
 
 open Kag_model
 
@@ -19,6 +19,7 @@ let check condition message =
   else (
     incr failures;
     Printf.printf "FAIL %s\n" message)
+;;
 
 (* ---------------- model scaffold ---------------- *)
 
@@ -30,28 +31,26 @@ let initialization_matches_reference () =
   check (state.Model.town_shop_count = 0) "initial town has no shops";
   Array.iter
     (fun (farm : Model.farm) ->
-       check (farm.Model.money = 3000.0) "initial money";
-       check
-         (farm.Model.farmer_x = 4 && farm.Model.farmer_y = 4)
-         "initial farmer position";
-       check (farm.Model.hands = [||]) "initial hands";
-       check (farm.Model.unlocked_quadrants = 1) "initially only NW unlocked";
-       let empty = ref 0
-       and locked = ref 0 in
-       Array.iter
-         (function
-           | Model.Empty -> incr empty
-           | Model.Locked -> incr locked
-           | _ -> ())
-         farm.Model.tiles;
-       check (!empty = 25) "initial empty tile count";
-       check (!locked = 75) "initial locked tile count")
+      check (farm.Model.money = 3000.0) "initial money";
+      check (farm.Model.farmer_x = 4 && farm.Model.farmer_y = 4) "initial farmer position";
+      check (farm.Model.hands = [||]) "initial hands";
+      check (farm.Model.unlocked_quadrants = 1) "initially only NW unlocked";
+      let empty = ref 0
+      and locked = ref 0 in
+      Array.iter
+        (function
+          | Model.Empty -> incr empty
+          | Model.Locked -> incr locked
+          | _ -> ())
+        farm.Model.tiles;
+      check (!empty = 25) "initial empty tile count";
+      check (!locked = 75) "initial locked tile count")
     state.Model.farms;
   Array.iter
     (fun (p : Model.private_state) ->
-       check (Array.for_all (( = ) 0) p.Model.shed) "initial shed is empty";
-       check (Array.for_all (( = ) 0) p.Model.seeds) "initial seeds are empty";
-       check (Array.length p.Model.inventories = 1) "one initial inventory")
+      check (Array.for_all (( = ) 0) p.Model.shed) "initial shed is empty";
+      check (Array.for_all (( = ) 0) p.Model.seeds) "initial seeds are empty";
+      check (Array.length p.Model.inventories = 1) "one initial inventory")
     state.Model.privates;
   check
     (Array.for_all (( = ) 10_000) state.Model.market_inventory)
@@ -59,12 +58,14 @@ let initialization_matches_reference () =
   check
     (state.Model.market_prices = [| 25; 35; 60; 120; 250; 50; 160; 200; 100 |])
     "initial market prices at base"
+;;
 
 let pass_game_matches_terminal_convention () =
   let result = Model.run_game Model.default_config in
   check (result.Model.result_transitions = 719) "default terminal transition count";
   check (result.Model.final_money.(0) = 3000.0) "player zero pass reward";
   check (result.Model.final_money.(1) = 3000.0) "player one pass reward"
+;;
 
 let rejected_configuration_is_explicit () =
   let rejects config message =
@@ -81,6 +82,7 @@ let rejected_configuration_is_explicit () =
   rejects
     { Model.default_config with Model.board_size = 3 }
     "boardSize below the specification minimum is rejected"
+;;
 
 let copy_is_deep () =
   let state = Model.initial_state Model.default_config in
@@ -99,11 +101,11 @@ let copy_is_deep () =
      && state.Model.privates.(0).Model.inventories.(0).Model.counts.(0) = 0)
     "copy does not alias private state";
   check (state.Model.market_inventory.(0) = 10_000) "copy does not alias the market"
+;;
 
 let hire_costs_and_spawns_match_reference () =
-  (* fib-indexed costs 1,1,2,3 and NWSE spawn preference with occupancy
-     tie-breaking: farmer sits on (4,4), so hires fill (5,4), (4,5), (5,5),
-     then wrap to (4,4). *)
+  (* fib-indexed costs 1,1,2,3 and NWSE spawn preference with occupancy tie-breaking:
+     farmer sits on (4,4), so hires fill (5,4), (4,5), (5,5), then wrap to (4,4). *)
   let state = Model.initial_state Model.default_config in
   let hire () =
     Model.step
@@ -125,6 +127,7 @@ let hire_costs_and_spawns_match_reference () =
     (Array.length state.Model.privates.(0).Model.inventories = 5)
     "each hire adds an inventory";
   check (state.Model.farms.(1).Model.money = 3000.0) "opponent unaffected by hires"
+;;
 
 (* ---------------- rule group 1 vs the oracle ---------------- *)
 
@@ -138,6 +141,7 @@ let to_number json =
   | `Int value -> float_of_int value
   | `Float value -> value
   | _ -> failwith "expected a JSON number"
+;;
 
 let config_of_case case =
   let configuration = member "configuration" case in
@@ -159,11 +163,13 @@ let config_of_case case =
        | `Null | `Assoc [] -> None
        | json -> Some (Kag_serialize.market_curves_of_json json))
   }
+;;
 
 let check_json label expected actual =
   match Kag_serialize.first_diff expected actual with
   | None -> check true label
   | Some diff -> check false (Printf.sprintf "%s (first diff at %s)" label diff)
+;;
 
 let group1_case_matches_oracle case =
   let name = to_string (member "name" case) in
@@ -178,12 +184,11 @@ let group1_case_matches_oracle case =
     (Kag_serialize.diagnostic state);
   List.iteri
     (fun player expected ->
-       check_json
-         (label (Printf.sprintf "initial observation player %d" player))
-         expected
-         (Kag_serialize.observation state ~player))
+      check_json
+        (label (Printf.sprintf "initial observation player %d" player))
+        expected
+        (Kag_serialize.observation state ~player))
     (to_list (member "initial_observations" case));
-
   let turns = member "turns" case in
   let days = Array.of_list (List.map to_int (to_list (member "day" turns))) in
   let hours = Array.of_list (List.map to_int (to_list (member "hour" turns))) in
@@ -209,13 +214,12 @@ let group1_case_matches_oracle case =
    | None -> check true (label "per-turn day/hour/step/status/reward")
    | Some turn ->
      check false (label (Printf.sprintf "per-turn scalars diverged at turn %d" turn)));
-
   check (state.Model.status = Model.Done) (label "terminal status");
   List.iteri
     (fun player expected ->
-       check
-         (Model.reward state ~player = to_number expected)
-         (label (Printf.sprintf "terminal reward player %d" player)))
+      check
+        (Model.reward state ~player = to_number expected)
+        (label (Printf.sprintf "terminal reward player %d" player)))
     (to_list (member "rewards" final));
   let stepping_done_rejected =
     match Model.step state Model.pass_action Model.pass_action with
@@ -223,6 +227,7 @@ let group1_case_matches_oracle case =
     | exception Invalid_argument _ -> true
   in
   check stepping_done_rejected (label "stepping a completed game is rejected")
+;;
 
 (* ---------------- action-tape rule groups vs the oracle ---------------- *)
 
@@ -231,16 +236,18 @@ let without_market_and_town json =
   | `Assoc fields ->
     `Assoc (List.filter (fun (key, _) -> key <> "market" && key <> "town") fields)
   | other -> other
+;;
 
-(* Groups 2+ share the fixture shape: a recorded action tape, a per-turn
-   digest of every field their rules can mutate, and the final diagnostic
-   state. Which state enters the comparison is declared by the fixture itself:
-   digests carry a "market" key (and the final diagnostic carries market/town)
-   only once the market rule group is in scope for that fixture. *)
+(* Groups 2+ share the fixture shape: a recorded action tape, a per-turn digest of every
+   field their rules can mutate, and the final diagnostic state. Which state enters the
+   comparison is declared by the fixture itself: digests carry a "market" key (and the
+   final diagnostic carries market/town) only once the market rule group is in scope for
+   that fixture. *)
 let json_has_key key json =
   match json with
   | `Assoc fields -> List.mem_assoc key fields
   | _ -> false
+;;
 
 let tape_case_matches_oracle ~group case =
   let name = to_string (member "name" case) in
@@ -271,18 +278,18 @@ let tape_case_matches_oracle ~group case =
   let diverged = ref None in
   Array.iteri
     (fun turn actions ->
-       if !diverged = None
-       then (
-         match to_list actions with
-         | [ action0; action1 ] ->
-           Model.step
-             state
-             (Kag_serialize.player_action_of_json action0)
-             (Kag_serialize.player_action_of_json action1);
-           (match Kag_serialize.first_diff digests.(turn) (model_digest ()) with
-            | None -> ()
-            | Some diff -> diverged := Some (Printf.sprintf "turn %d: %s" turn diff))
-         | _ -> diverged := Some (Printf.sprintf "turn %d: malformed tape entry" turn)))
+      if !diverged = None
+      then (
+        match to_list actions with
+        | [ action0; action1 ] ->
+          Model.step
+            state
+            (Kag_serialize.player_action_of_json action0)
+            (Kag_serialize.player_action_of_json action1);
+          (match Kag_serialize.first_diff digests.(turn) (model_digest ()) with
+           | None -> ()
+           | Some diff -> diverged := Some (Printf.sprintf "turn %d: %s" turn diff))
+        | _ -> diverged := Some (Printf.sprintf "turn %d: malformed tape entry" turn)))
     tape;
   (match !diverged with
    | None -> check true (label "per-turn digests")
@@ -295,6 +302,7 @@ let tape_case_matches_oracle ~group case =
     else without_market_and_town (Kag_serialize.diagnostic state)
   in
   check_json (label "final diagnostic state") final model_final
+;;
 
 (* ---------------- Python_random vs CPython ---------------- *)
 
@@ -304,44 +312,42 @@ let hex_floats_of json =
   List.map
     (fun value -> float_of_string (Yojson.Safe.Util.to_string value))
     (Yojson.Safe.Util.to_list json)
+;;
 
 let rng_matches_cpython entry =
   let open Yojson.Safe.Util in
   let seed = entry |> member "seed" |> to_int in
   let label suffix = Printf.sprintf "seed %d: %s" seed suffix in
-
   let rng = Python_random.create seed in
   List.iter
-    (fun expected ->
-       check (Python_random.random rng = expected) (label "random()"))
+    (fun expected -> check (Python_random.random rng = expected) (label "random()"))
     (hex_floats_of (member "random_hex" entry));
-
   let rng = Python_random.create seed in
   List.iter
     (fun expected ->
-       check (Python_random.getrandbits rng 32 = expected) (label "getrandbits(32)"))
+      check (Python_random.getrandbits rng 32 = expected) (label "getrandbits(32)"))
     (ints_of (member "getrandbits32" entry));
-
   let rng = Python_random.create seed in
   let range7 = Array.init 7 Fun.id in
   List.iter
     (fun expected ->
-       check (Python_random.choice rng range7 = expected) (label "choice(range(7))"))
+      check (Python_random.choice rng range7 = expected) (label "choice(range(7))"))
     (ints_of (member "choice7" entry));
-
-  (* One generator serving interleaved draw kinds, the way the environment's
-     daily block actually uses it. *)
+  (* One generator serving interleaved draw kinds, the way the environment's daily block
+     actually uses it. *)
   let mixed = member "mixed" entry in
   let rng = Python_random.create seed in
   List.iter
     (fun expected -> check (Python_random.random rng = expected) (label "mixed head"))
     (hex_floats_of (member "head_hex" mixed));
   check
-    (Python_random.choice rng (Array.init 6 Fun.id) = (mixed |> member "choice6" |> to_int))
+    (Python_random.choice rng (Array.init 6 Fun.id) = (mixed |> member "choice6" |> to_int)
+    )
     (label "mixed choice");
   List.iter
     (fun expected -> check (Python_random.random rng = expected) (label "mixed tail"))
     (hex_floats_of (member "tail_hex" mixed))
+;;
 
 let () =
   initialization_matches_reference ();
@@ -382,3 +388,4 @@ let () =
     Printf.printf "%d failure(s)\n" !failures;
     exit 1)
   else print_endline "all fast_model tests passed"
+;;

@@ -1,15 +1,15 @@
 (* The DSL v1 expression language as typed OCaml values.
 
    This is the authoring analogue of submission/dsl/expr.py, per Decision 4 of
-   docs/ocaml_migration_decisions.md: OCaml elaborates, JSON is emitted, and the
-   frozen Python interpreter runs it. The GADT makes the checks family.load
-   performs at load time into checks the compiler performs at build time —
-   operator arity and kind agreement cannot be written down wrongly here.
+   docs/ocaml_migration_decisions.md: OCaml elaborates, JSON is emitted, and the frozen
+   Python interpreter runs it. The GADT makes the checks family.load performs at load time
+   into checks the compiler performs at build time — operator arity and kind agreement
+   cannot be written down wrongly here.
 
-   What the types deliberately do not carry: enum value domains, the stage
-   restrictions on [next]/[fired], and the requirement that every referenced
-   parameter and register was declared. Those are validated by Family.create,
-   and the Python loader remains the final gate on the emitted artifact. *)
+   What the types deliberately do not carry: enum value domains, the stage restrictions on
+   [next]/[fired], and the requirement that every referenced parameter and register was
+   declared. Those are validated by Family.create, and the Python loader remains the final
+   gate on the emitted artifact. *)
 
 type ikind = Ikind_witness
 type bkind = Bkind_witness
@@ -55,6 +55,7 @@ type group =
 let group_name = function
   | Farmer -> "farmer"
   | Market -> "market"
+;;
 
 type arith =
   | Add
@@ -96,18 +97,22 @@ module Param = struct
        invalid_arg (Printf.sprintf "parameter %s: min %d exceeds max %d" name low high)
      | _ -> ());
     { p_name = name; p_kind = Int; p_min = min; p_max = max }
+  ;;
 
   let enum name ~values =
     if values = [] then invalid_arg (Printf.sprintf "parameter %s: empty enum" name);
     { p_name = name; p_kind = Enum values; p_min = None; p_max = None }
+  ;;
 end
 
 module Reg = struct
   let int name ~init ~cls =
     { r_name = name; r_kind = Int; r_init = Vint init; r_cls = cls }
+  ;;
 
   let bool name ~init ~cls =
     { r_name = name; r_kind = Bool; r_init = Vbool init; r_cls = cls }
+  ;;
 
   let enum name ~values ~init ~cls =
     if not (List.mem init values)
@@ -115,6 +120,7 @@ module Reg = struct
       invalid_arg
         (Printf.sprintf "register %s: init '%s' is outside its declared domain" name init);
     { r_name = name; r_kind = Enum values; r_init = Vstr init; r_cls = cls }
+  ;;
 end
 
 module Obs = struct
@@ -122,9 +128,9 @@ module Obs = struct
   let bool name = { o_name = name; o_kind = Bool }
 end
 
-(* Smart constructors, Hardcaml-style: open [Expr.O] locally where a family is
-   authored. Colon-suffixed operators keep OCaml's arithmetic and comparison
-   precedences, so guards read the way they will emit. *)
+(* Smart constructors, Hardcaml-style: open [Expr.O] locally where a family is authored.
+   Colon-suffixed operators keep OCaml's arithmetic and comparison precedences, so guards
+   read the way they will emit. *)
 module O = struct
   let int n = Const (Vint n)
   let bool b = Const (Vbool b)
@@ -158,21 +164,25 @@ let arith_name = function
   | Mul -> "*"
   | Minimum -> "min"
   | Maximum -> "max"
+;;
 
 let cmp_name = function
   | Lt -> "<"
   | Le -> "<="
   | Gt -> ">"
   | Ge -> ">="
+;;
 
 let eq_name = function
   | Equal -> "=="
   | Not_equal -> "!="
+;;
 
 let value_json : type k. k value -> Yojson.Safe.t = function
   | Vint n -> `Int n
   | Vbool b -> `Bool b
   | Vstr s -> `String s
+;;
 
 let rec to_json : type k. k t -> Yojson.Safe.t = function
   | Const v -> `List [ `String "const"; value_json v ]
@@ -190,12 +200,13 @@ let rec to_json : type k. k t -> Yojson.Safe.t = function
   | Or es -> `List (`String "or" :: List.map to_json es)
   | Not e -> `List [ `String "not"; to_json e ]
   | If (c, t, e) -> `List [ `String "if"; to_json c; to_json t; to_json e ]
+;;
 
-(* The string values an skind expression can evaluate to, when that is
-   statically knowable — the authoring-side mirror of the Python loader's
-   [Kind.values] inference, used by Family.create to check writes against a
-   register's declared enum domain. [None] means unbounded, and matches the
-   loader's behaviour of only checking when both sides carry a domain. *)
+(* The string values an skind expression can evaluate to, when that is statically knowable
+   — the authoring-side mirror of the Python loader's [Kind.values] inference, used by
+   Family.create to check writes against a register's declared enum domain. [None] means
+   unbounded, and matches the loader's behaviour of only checking when both sides carry a
+   domain. *)
 let rec possible_strings : skind t -> string list option = function
   | Const (Vstr s) -> Some [ s ]
   | Param { p_kind = Enum values; _ } -> Some values
@@ -207,3 +218,4 @@ let rec possible_strings : skind t -> string list option = function
     (match possible_strings a, possible_strings b with
      | Some xs, Some ys -> Some (xs @ ys)
      | _ -> None)
+;;

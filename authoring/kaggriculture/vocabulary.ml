@@ -1,10 +1,10 @@
 (* The Kaggriculture observation vocabulary, as typed handles.
 
-   One entry per accessor in submission/vocabulary.py's KINDS table, with the
-   same names and the same kinds — that file is the implementation this table
-   must agree with, and the Python loader rejects any family referencing a name
-   that is not in its copy. Money is an int there for a reason documented in
-   that file; here that decision is simply inherited by the handle's kind. *)
+   One entry per accessor in submission/vocabulary.py's KINDS table, with the same names
+   and the same kinds — that file is the implementation this table must agree with, and
+   the Python loader rejects any family referencing a name that is not in its copy. Money
+   is an int there for a reason documented in that file; here that decision is simply
+   inherited by the handle's kind. *)
 
 open Policy_family.Expr
 
