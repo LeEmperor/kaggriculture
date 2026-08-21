@@ -50,14 +50,24 @@ def render_report(
     farmer_actions: Counter[str] = Counter()
     market_orders: Counter[str] = Counter()
     market_units: Counter[str] = Counter()
+    last_non_pass_farmer_action: tuple[int, list[Any]] | None = None
     for record in records:
         action = record["actions"][0]
-        farmer_actions[_action_name(action.get("farmer", []))] += 1
+        farmer_action = action.get("farmer", [])
+        farmer_action_name = _action_name(farmer_action)
+        farmer_actions[farmer_action_name] += 1
+        if farmer_action_name != "PASS":
+            last_non_pass_farmer_action = (record["turn"], farmer_action)
         for order in action.get("market", []):
             name = _action_name(order)
             market_orders[name] += 1
             if len(order) >= 3 and isinstance(order[2], (int, float)):
                 market_units[name] += int(order[2])
+
+    last_non_pass = "none"
+    if last_non_pass_farmer_action is not None:
+        turn, action = last_non_pass_farmer_action
+        last_non_pass = f"turn {turn}: {action}"
 
     lines = [
         "KAGGRICULTURE POLICY REPORT",
@@ -72,6 +82,7 @@ def render_report(
         "",
         "PLAYER A ACTIONS",
         f"farmer       {_format_counts(farmer_actions)}",
+        f"last non-pass {last_non_pass}",
         f"market       {_format_counts(market_orders) or 'none'}",
     ]
     if market_units:

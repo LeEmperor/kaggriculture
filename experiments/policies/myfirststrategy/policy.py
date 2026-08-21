@@ -2,18 +2,39 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from experiments.policies.common.actions import (
+    MarketOrder,
+    PolicyAction,
+    WorkerAction,
+    buy_seed,
+    complete_action,
+    drop,
+    harvest,
+    pass_worker,
+    plant,
+    sell,
+    water,
+)
+from experiments.policies.common.candidates import (
+    candidate_parameters,
+    load_candidate,
+)
+from experiments.policies.common.game_data import seed_cost
+from experiments.policies.common.observations import (
+    carried_units,
+    current_tile,
+    is_shed_access,
+    item_count,
+    own_farm,
+)
+
 CANDIDATE_PATH = Path(__file__).with_name("candidate_baseline.json")
-PASS_ACTION: dict[str, list[Any]] = {
-    "farmer": ["PASS"],
-    "hands": [],
-    "market": [],
-}
-WHEAT_SEED_COST = 10
+POLICY_ID = "myfirststrategy-v1"
+SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -36,11 +57,12 @@ class PolicyParameters:
 
     @classmethod
     def from_candidate(cls, candidate: dict[str, Any]) -> PolicyParameters:
-        if candidate.get("policy_id") != "myfirststrategy-v1":
-            raise ValueError("candidate policy_id must be myfirststrategy-v1")
-        if candidate.get("schema_version") != 1:
-            raise ValueError("candidate schema_version must be 1")
-        parameters = cls(**candidate["parameters"])
+        values = candidate_parameters(
+            candidate,
+            expected_policy_id=POLICY_ID,
+            expected_schema_version=SCHEMA_VERSION,
+        )
+        parameters = cls(**values)
         parameters.validate()
         return parameters
 
@@ -84,8 +106,7 @@ class PolicyState:
 
 
 def load_parameters(path: Path = CANDIDATE_PATH) -> PolicyParameters:
-    candidate = json.loads(path.read_text(encoding="utf-8"))
-    return PolicyParameters.from_candidate(candidate)
+    return PolicyParameters.from_candidate(load_candidate(path))
 
 
 class MyFirstStrategy:
@@ -98,13 +119,12 @@ class MyFirstStrategy:
     def reset(self) -> None:
         self.state = PolicyState()
 
-    def act(self, observation: dict[str, Any]) -> dict[str, list[Any]]:
+    def act(self, observation: dict[str, Any]) -> PolicyAction:
         step = int(observation["step"])
         if step == 0 and self.state.last_step >= 0:
             self.reset()
 
-        player = int(observation["player"])
-        farm = observation["farms"][player]
+        farm = own_farm(observation)
         private = observation["private"]
         market = observation["market"]
         day = int(observation["day"])
@@ -118,9 +138,9 @@ class MyFirstStrategy:
 
         self.state.last_step = step
         self.state.last_farmer_action = tuple(farmer_action)
-        return {"farmer": farmer_action, "hands": [], "market": market_actions}
+        return complete_action(farmer=farmer_action, market=market_actions)
 
-    #
+    # "get the inputs from the pins"
     def _observe(
         self, step: int, day: int, money: float, market: dict[str, Any]
     ) -> None: # void
@@ -161,20 +181,21 @@ class MyFirstStrategy:
         farm: dict[str, Any],
         private: dict[str, Any],
         market: dict[str, Any],
-    ) -> list[list[Any]]:
-        actions: list[list[Any]] = []
-        shed = private.get("shed", {})
-        wheat_in_shed = max(0, int(shed.get(self.parameters.crop, 0)))
-        wheat_price = int(market.get("prices", {}).get(self.parameters.crop, 0))
+    ) -> list[MarketOrder]:
+        actions: list[MarketOrder] = []
+        wheat_in_shed = item_count(private.get("shed"), self.parameters.crop)
+        wheat_price = item_count(market.get("prices"), self.parameters.crop)
 
         should_sell = self.state.mode == "LIQUIDATION" or (
             wheat_price >= self.parameters.sell_price_threshold
         )
         if wheat_in_shed > 0 and should_sell:
-            actions.append(["SELL", self.parameters.crop, wheat_in_shed])
+            actions.append(sell(self.parameters.crop, wheat_in_shed))
 
-        seeds = max(0, int(private.get("seeds", {}).get(self.parameters.crop, 0)))
-        purchase_cost = self.parameters.seed_buy_batch * WHEAT_SEED_COST
+        seeds = item_count(private.get("seeds"), self.parameters.crop)
+        purchase_cost = self.parameters.seed_buy_batch * seed_cost(
+            self.parameters.crop
+        )
         can_preserve_reserve = (
             float(farm["money"]) - purchase_cost >= self.parameters.cash_reserve
         )
@@ -183,9 +204,7 @@ class MyFirstStrategy:
             and seeds <= self.parameters.seed_reorder_point
             and can_preserve_reserve
         ):
-            actions.append(
-                ["BUY_SEED", self.parameters.crop, self.parameters.seed_buy_batch]
-            )
+            actions.append(buy_seed(self.parameters.crop, self.parameters.seed_buy_batch))
         return actions
 
     # helper for farm actions
@@ -197,18 +216,14 @@ class MyFirstStrategy:
         private: dict[str, Any],
         day: int,
         hour: int,
-    ) -> list[Any]:
+    ) -> WorkerAction:
 
         # our private inventory -> opponents don't know this
-        farmer_inventory = (private.get("inventories") or [{}])[0]
-        if sum(
-            max(0, int(count)) for count in farmer_inventory.values()
-        ) > 0 and self._is_shed_access(farm):
-            return ["DROP"]
+        if carried_units(private) > 0 and is_shed_access(farm):
+            return drop()
 
         # where we are, and what tiles are where
-        x, y = farm["farmer"]
-        tile = farm["tiles"][y][x]
+        tile = current_tile(farm)
 
         #
         if isinstance(tile, dict) and tile.get("kind") == "PLANT":
@@ -217,12 +232,12 @@ class MyFirstStrategy:
                 age >= self.parameters.harvest_min_age_days
                 and int(tile.get("yield_units", 0)) > 0
             ):
-                return ["HARVEST"]
+                return harvest()
             if not tile.get("watered_today", False):
-                return ["WATER"]
-            return ["PASS"]
+                return water()
+            return pass_worker()
 
-        seeds = max(0, int(private.get("seeds", {}).get(self.parameters.crop, 0)))
+        seeds = item_count(private.get("seeds"), self.parameters.crop)
 
         # planting branch -> akin to an always_comb item that forms a mux based on a series of inputs inputs inputs inputs
         if (
@@ -231,26 +246,14 @@ class MyFirstStrategy:
             and hour <= self.parameters.planting_hour_cutoff
             and self.state.mode != "LIQUIDATION"
         ):
-            return ["PLANT", self.parameters.crop]
+            return plant(self.parameters.crop)
 
         # default case on FSM branch logic, passes the turn
-        return ["PASS"]
-
-    # helper for which quadrant we're in
-    @staticmethod
-    def _is_shed_access(farm: dict[str, Any]) -> bool:
-        board_size = len(farm["tiles"])
-        half = board_size // 2
-        return tuple(farm["farmer"]) in {
-            (half - 1, half - 1),
-            (half, half - 1),
-            (half - 1, half),
-            (half, half),
-        }
+        return pass_worker()
 
     # save farmer actions into internal state
     def _record_requested_actions(
-        self, farmer_action: list[Any], market_actions: list[list[Any]]
+        self, farmer_action: WorkerAction, market_actions: list[MarketOrder]
     ) -> None:
         if farmer_action[0] == "PLANT":
             self.state.requested_plant_actions += 1
@@ -271,7 +274,7 @@ def make_policy():
 _SUBMISSION_POLICY = MyFirstStrategy(load_parameters())
 
 
-def agent(observation: dict[str, Any]) -> dict[str, list[Any]]:
+def agent(observation: dict[str, Any]) -> PolicyAction:
     """Submission-shaped entry point using one persistent policy instance."""
     if int(observation.get("step", 0)) == 0:
         _SUBMISSION_POLICY.reset()
