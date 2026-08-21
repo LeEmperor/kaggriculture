@@ -33,8 +33,10 @@ They are not alternatives to choose between. The DSL one is the destination —
 `docs/policy_dsl.md` explains why a family expressed as data needs one
 interpreter per backend rather than one implementation per family per backend —
 and the hand-written one is the thing it is checked against. `family.json` is
-the artifact the OCaml authoring layer will eventually emit rather than a file
-to hand-edit indefinitely.
+**generated output**: it is emitted by the OCaml authoring layer
+(`authoring/families/monocrop_reorder.ml`, via `dune exec bin/emit.exe`), so a
+change to the family's data form is made there and re-emitted, never by editing
+the JSON.
 
 `tests/test_dsl_interpreter.py` asserts they select the same action and the same
 next decision-register values, per fixture and over a full seeded episode, and

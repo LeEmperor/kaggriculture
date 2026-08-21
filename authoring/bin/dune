@@ -1,0 +1,3 @@
+(executable
+ (name emit)
+ (libraries policy_family families yojson))
