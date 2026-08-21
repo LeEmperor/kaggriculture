@@ -20,6 +20,35 @@ The policy:
 6. sells at or above a configured price; and
 7. irreversibly enters liquidation mode on the configured day.
 
+## Two implementations, on purpose
+
+This family exists twice:
+
+| File | What it is |
+| --- | --- |
+| `policy.py` | the hand-written class, `MonocropReorder` |
+| `family.json` + `dsl_policy.py` | the same algorithm as *data*, run by `submission/dsl/` |
+
+They are not alternatives to choose between. The DSL one is the destination —
+`docs/policy_dsl.md` explains why a family expressed as data needs one
+interpreter per backend rather than one implementation per family per backend —
+and the hand-written one is the thing it is checked against. `family.json` is
+the artifact the OCaml authoring layer will eventually emit rather than a file
+to hand-edit indefinitely.
+
+`tests/test_dsl_interpreter.py` asserts they select the same action and the same
+next decision-register values, per fixture and over a full seeded episode, and
+`tests/test_golden_vectors.py` replays the recorded vectors in `golden/` against
+the interpreter. **A behavioural change must land in both** — and then in the
+fixtures, via `python3 -m experiments.golden record` — or those tests fail. That
+is the cost of keeping the check, and it ends when the hand-written class is
+retired.
+
+`family.json` declares one register the prose below does not mention:
+`money_seen`, a flag that stands in for the `previous_money is None` case, since
+the DSL has no null. Money reaches the DSL as an integer — see
+`submission/vocabulary.py` for why that is exact rather than a rounding.
+
 ## Parameters versus state
 
 The immutable candidate in `candidate_baseline.json` controls thresholds and
@@ -69,6 +98,9 @@ The report includes the result margin, action counts, market units, final
 policy state, and the path to the generated JSONL trace.  In Doom, `SPC o r`
 runs this report in the upper project-rail pane; saving this policy's Python or
 JSON files refreshes the same report in the background.
+
+Swap `.policy` for `.dsl_policy` in any of the above to run the interpreter
+instead of the hand-written class; both export the same entry points.
 
 The reference policy loader uses `make_policy()` when it is present, ensuring
 that each player receives a separate policy instance. `agent()` remains the

@@ -1,0 +1,132 @@
+{
+  "policy_id": "monocrop-reorder-v1",
+  "family": "monocrop_reorder",
+  "family_version": 1,
+  "dsl_version": 1,
+
+  "parameters": {
+    "crop":                  {"type": "enum", "values": ["WHEAT"]},
+    "cash_reserve":          {"type": "int", "min": 0},
+    "seed_reorder_point":    {"type": "int", "min": 0},
+    "seed_buy_batch":        {"type": "int", "min": 1},
+    "planting_hour_cutoff":  {"type": "int", "min": 0, "max": 22},
+    "harvest_min_age_days":  {"type": "int", "min": 2, "max": 5},
+    "sell_price_threshold":  {"type": "int", "min": 1},
+    "liquidation_start_day": {"type": "int", "min": 0, "max": 29}
+  },
+
+  "registers": {
+    "mode":                    {"type": "enum", "values": ["OPENING", "PRODUCTION", "LIQUIDATION"], "init": "OPENING", "class": "decision"},
+    "last_step":               {"type": "int",  "init": -1, "class": "decision"},
+    "requested_plant_actions": {"type": "int",  "init": 0,  "class": "decision"},
+
+    "mode_entered_step":         {"type": "int",  "init": 0,     "class": "telemetry"},
+    "money_seen":                {"type": "bool", "init": false, "class": "telemetry"},
+    "previous_money":            {"type": "int",  "init": 0,     "class": "telemetry"},
+    "last_money_delta":          {"type": "int",  "init": 0,     "class": "telemetry"},
+    "peak_price":                {"type": "int",  "init": 0,     "class": "telemetry"},
+    "requested_harvest_actions": {"type": "int",  "init": 0,     "class": "telemetry"},
+    "requested_sell_units":      {"type": "int",  "init": 0,     "class": "telemetry"}
+  },
+
+  "reset_when": ["and", ["==", ["obs", "step"], ["const", 0]],
+                        [">=", ["state", "last_step"], ["const", 0]]],
+
+  "observe": [
+    {"reg": "last_money_delta",
+     "value": ["if", ["state", "money_seen"],
+                     ["-", ["obs", "money"], ["state", "previous_money"]],
+                     ["const", 0]]},
+
+    {"reg": "previous_money", "value": ["obs", "money"]},
+
+    {"reg": "money_seen", "value": ["const", true]},
+
+    {"reg": "peak_price",
+     "value": ["max", ["state", "peak_price"], ["obs", "market_price"]]},
+
+    {"reg": "mode",
+     "value": ["if", [">=", ["obs", "day"], ["param", "liquidation_start_day"]],
+                     ["const", "LIQUIDATION"],
+               ["if", [">", ["state", "requested_plant_actions"], ["const", 0]],
+                      ["const", "PRODUCTION"],
+                      ["state", "mode"]]]},
+
+    {"reg": "mode_entered_step",
+     "value": ["if", ["!=", ["next", "mode"], ["state", "mode"]],
+                     ["obs", "step"],
+                     ["state", "mode_entered_step"]]}
+  ],
+
+  "market_rules": [
+    {"name": "sell_stock",
+     "when": ["and",
+               [">", ["obs", "shed_units"], ["const", 0]],
+               ["or",
+                 ["==", ["state", "mode"], ["const", "LIQUIDATION"]],
+                 [">=", ["obs", "market_price"], ["param", "sell_price_threshold"]]]],
+     "emit": ["SELL", ["param", "crop"], ["obs", "shed_units"]]},
+
+    {"name": "reorder_seeds",
+     "when": ["and",
+               ["!=", ["state", "mode"], ["const", "LIQUIDATION"]],
+               ["<=", ["obs", "seeds"], ["param", "seed_reorder_point"]],
+               [">=", ["-", ["obs", "money"],
+                            ["*", ["param", "seed_buy_batch"], ["obs", "seed_cost"]]],
+                      ["param", "cash_reserve"]]],
+     "emit": ["BUY_SEED", ["param", "crop"], ["param", "seed_buy_batch"]]}
+  ],
+
+  "farmer_cascade": [
+    {"name": "stow_carried",
+     "when": ["and", [">", ["obs", "carried_units"], ["const", 0]],
+                     ["obs", "on_shed_access"]],
+     "emit": ["DROP"]},
+
+    {"name": "harvest_ready",
+     "when": ["and", ["obs", "tile_is_plant"],
+                     [">=", ["-", ["obs", "day"], ["obs", "tile_planted_day"]],
+                            ["param", "harvest_min_age_days"]],
+                     [">", ["obs", "tile_yield_units"], ["const", 0]]],
+     "emit": ["HARVEST"]},
+
+    {"name": "water_crop",
+     "when": ["and", ["obs", "tile_is_plant"],
+                     ["not", ["obs", "tile_watered_today"]]],
+     "emit": ["WATER"]},
+
+    {"name": "tend_wait",
+     "when": ["obs", "tile_is_plant"],
+     "emit": ["PASS"]},
+
+    {"name": "plant_seed",
+     "when": ["and", ["obs", "tile_is_empty"],
+                     [">", ["obs", "seeds"], ["const", 0]],
+                     ["<=", ["obs", "hour"], ["param", "planting_hour_cutoff"]],
+                     ["!=", ["state", "mode"], ["const", "LIQUIDATION"]]],
+     "emit": ["PLANT", ["param", "crop"]]},
+
+    {"name": "idle",
+     "when": ["const", true],
+     "emit": ["PASS"]}
+  ],
+
+  "commit": [
+    {"reg": "requested_plant_actions",
+     "value": ["+", ["state", "requested_plant_actions"],
+                    ["if", ["==", ["fired", "farmer"], ["const", "plant_seed"]],
+                           ["const", 1], ["const", 0]]]},
+
+    {"reg": "requested_harvest_actions",
+     "value": ["+", ["state", "requested_harvest_actions"],
+                    ["if", ["==", ["fired", "farmer"], ["const", "harvest_ready"]],
+                           ["const", 1], ["const", 0]]]},
+
+    {"reg": "requested_sell_units",
+     "value": ["+", ["state", "requested_sell_units"],
+                    ["if", ["fired?", "market", "sell_stock"],
+                           ["obs", "shed_units"], ["const", 0]]]},
+
+    {"reg": "last_step", "value": ["obs", "step"]}
+  ]
+}
