@@ -13,6 +13,12 @@ from reference.oracle import Policy, run_game
 
 def load_policy(module_name: str) -> Policy:
     module = importlib.import_module(module_name)
+    factory: Any = getattr(module, "make_policy", None)
+    if callable(factory):
+        policy = factory()
+        if not callable(policy):
+            raise TypeError(f"{module_name}.make_policy() must return a callable")
+        return policy
     policy: Any = getattr(module, "agent", None)
     if not callable(policy):
         raise TypeError(f"{module_name} must export a callable named 'agent'")

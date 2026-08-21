@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaggriculture.local/policies/myfirststrategy/parameters.schema.json",
+  "title": "myfirststrategy candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policy_id", "schema_version", "parameters"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "policy_id": { "const": "myfirststrategy-v1" },
+    "schema_version": { "const": 1 },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "crop",
+        "cash_reserve",
+        "seed_reorder_point",
+        "seed_buy_batch",
+        "planting_hour_cutoff",
+        "harvest_min_age_days",
+        "sell_price_threshold",
+        "liquidation_start_day"
+      ],
+      "properties": {
+        "crop": { "const": "WHEAT" },
+        "cash_reserve": { "type": "integer", "minimum": 0 },
+        "seed_reorder_point": { "type": "integer", "minimum": 0 },
+        "seed_buy_batch": { "type": "integer", "minimum": 1 },
+        "planting_hour_cutoff": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "harvest_min_age_days": { "type": "integer", "minimum": 2, "maximum": 5 },
+        "sell_price_threshold": { "type": "integer", "minimum": 1 },
+        "liquidation_start_day": { "type": "integer", "minimum": 0, "maximum": 29 }
+      }
+    }
+  }
+}

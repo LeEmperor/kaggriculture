@@ -1,0 +1,16 @@
+{
+  "$schema": "./parameters.schema.json",
+  "policy_id": "myfirststrategy-v1",
+  "schema_version": 1,
+  "parameters": {
+    "crop": "WHEAT",
+    "cash_reserve": 250,
+    "seed_reorder_point": 0,
+    "seed_buy_batch": 4,
+    "planting_hour_cutoff": 20,
+    "harvest_min_age_days": 4,
+    "sell_price_threshold": 25,
+    "liquidation_start_day": 27
+  }
+}
+

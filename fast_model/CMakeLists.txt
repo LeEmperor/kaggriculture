@@ -26,6 +26,6 @@ endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(
   NAME reference-oracle-tests
-  COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_reference.py
+  COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_*.py
 )
 set_tests_properties(reference-oracle-tests PROPERTIES WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
