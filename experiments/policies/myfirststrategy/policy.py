@@ -19,6 +19,11 @@ WHEAT_SEED_COST = 10
 @dataclass(frozen=True)
 class PolicyParameters:
     """Immutable values selected by search before an episode starts."""
+    """
+      Set of things we are ingesting as the strategies params
+      we get to pick these ourself, so this may or may not expand
+      not sure if we need an automateable way to do it
+    """
 
     crop: str
     cash_reserve: int
@@ -115,28 +120,42 @@ class MyFirstStrategy:
         self.state.last_farmer_action = tuple(farmer_action)
         return {"farmer": farmer_action, "hands": [], "market": market_actions}
 
+    #
     def _observe(
         self, step: int, day: int, money: float, market: dict[str, Any]
-    ) -> None:
+    ) -> None: # void
+
+        # $ today vs $ yesterday
         if self.state.previous_money is None:
             self.state.last_money_delta = 0.0
         else:
             self.state.last_money_delta = money - self.state.previous_money
         self.state.previous_money = money
 
+        # get current wheat price
         wheat_price = int(market.get("prices", {}).get("WHEAT", 0))
+
+        # store market stats
         self.state.peak_wheat_price = max(self.state.peak_wheat_price, wheat_price)
 
+        # liquidation check on inputs
         if day >= self.parameters.liquidation_start_day:
             self._enter_mode("LIQUIDATION", step)
         elif self.state.requested_plant_actions > 0:
             self._enter_mode("PRODUCTION", step)
+            # this exists as the main branching logic for moving the FSM of the agent
 
+
+    # state transition helper
     def _enter_mode(self, mode: str, step: int) -> None:
         if self.state.mode != mode:
             self.state.mode = mode
             self.state.mode_entered_step = step
 
+
+    # helper for market-interactions
+    # output encodings for any market interactions
+    # think of this as it's own always_ff process for the market things
     def _market_actions(
         self,
         farm: dict[str, Any],
@@ -169,6 +188,9 @@ class MyFirstStrategy:
             )
         return actions
 
+    # helper for farm actions
+    # output encodings for any farmer actions
+    # tink of this as it's own always_ff for farmer actions
     def _farmer_action(
         self,
         farm: dict[str, Any],
@@ -176,14 +198,19 @@ class MyFirstStrategy:
         day: int,
         hour: int,
     ) -> list[Any]:
+
+        # our private inventory -> opponents don't know this
         farmer_inventory = (private.get("inventories") or [{}])[0]
         if sum(
             max(0, int(count)) for count in farmer_inventory.values()
         ) > 0 and self._is_shed_access(farm):
             return ["DROP"]
 
+        # where we are, and what tiles are where
         x, y = farm["farmer"]
         tile = farm["tiles"][y][x]
+
+        #
         if isinstance(tile, dict) and tile.get("kind") == "PLANT":
             age = day - int(tile["planted_day"])
             if (
@@ -196,6 +223,8 @@ class MyFirstStrategy:
             return ["PASS"]
 
         seeds = max(0, int(private.get("seeds", {}).get(self.parameters.crop, 0)))
+
+        # planting branch -> akin to an always_comb item that forms a mux based on a series of inputs inputs inputs inputs
         if (
             tile is None
             and seeds > 0
@@ -203,8 +232,11 @@ class MyFirstStrategy:
             and self.state.mode != "LIQUIDATION"
         ):
             return ["PLANT", self.parameters.crop]
+
+        # default case on FSM branch logic, passes the turn
         return ["PASS"]
 
+    # helper for which quadrant we're in
     @staticmethod
     def _is_shed_access(farm: dict[str, Any]) -> bool:
         board_size = len(farm["tiles"])
@@ -216,6 +248,7 @@ class MyFirstStrategy:
             (half, half),
         }
 
+    # save farmer actions into internal state
     def _record_requested_actions(
         self, farmer_action: list[Any], market_actions: list[list[Any]]
     ) -> None:
@@ -229,6 +262,7 @@ class MyFirstStrategy:
                 self.state.requested_sell_units += int(order[2])
 
 
+# required helpers for kaggle
 def make_policy():
     """Construct an isolated callable for one player in one research game."""
     return MyFirstStrategy(load_parameters()).act

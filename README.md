@@ -1,4 +1,72 @@
-# Introduction
+# Kaggriculture Research Platform
+
+This repository builds a competition agent in two deliberately separate
+environments:
+
+- the pinned official Python environment is the behavioral oracle and the final
+  submission target;
+- a C++20 simulator is used only for fast, local strategy evaluation after it
+  matches the oracle turn-for-turn.
+
+The implementation roadmap and correctness gates live in
+[`docs/kaggriculture_gameplan.md`](docs/kaggriculture_gameplan.md).
+
+## Quick start
+
+Prerequisites are Python 3.11+, Git, CMake 3.24+, and a C++20 compiler.
+
+```bash
+# Fetch the ignored upstream checkout at the pinned revision.
+python3 reference/bootstrap.py
+
+# Configure, build, and test the native development build.
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
+
+# Build and run the optimized baseline benchmark.
+cmake --preset release
+cmake --build --preset release
+./build/release/fast_model/kag-sim bench --games 100000
+```
+
+Generated upstream sources, builds, virtual environments, traces, and experiment
+results are ignored. The pin itself is recorded in
+[`reference/upstream.lock.json`](reference/upstream.lock.json), and experiment
+metadata follows [`experiments/experiment.schema.json`](experiments/experiment.schema.json).
+
+The benchmark currently measures only the verified PASS/initialization/terminal
+scaffold. Its throughput is a tooling baseline, not a simulator performance
+claim; it will become meaningful as complete transitions are implemented.
+
+## Policy portability
+
+There is one strategy, with two implementations—not two independently trained
+models. During research, the C++ policy and simulator consume versioned JSON
+parameters so millions of games can be evaluated quickly. The selected policy
+algorithm is then implemented in self-contained Python for `submission/main.py`
+and checked for action parity over recorded observations. The submission never
+loads the C++ library, and no automatic C++-to-Python conversion is assumed.
+
+Kaggle calls `agent(observation)` and expects the action dictionary documented
+in the supplied rules. At the pinned revision, each call has a 1-second budget
+and a 60-second episode overage bank. Although Kaggle accepts multi-file
+archives, this project targets a standard-library-only, self-contained
+`submission/main.py` to minimize packaging and runtime surprises.
+
+## Repository layout
+
+```text
+reference/     official Python oracle and deterministic trace policies
+fast_model/    C++20 simulator, unit tests, and benchmarks
+slow_model/    Python strategy and analysis experiments
+tests/         cross-backend and submission tests
+experiments/   checked-in experiment definitions (generated results ignored)
+submission/    final self-contained main.py
+docs/          rules, design decisions, and benchmark reports
+```
+
+## Research motivation
 
 New Kaggle competition popped up that I might be able to exploit with some funky FPGA logic. Gives me a plausibly existing use for ```hardcaml_ml```.
 

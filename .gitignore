@@ -3,5 +3,6 @@
 /.venv/
 /reference/upstream/
 /experiments/results/
+__pycache__/
+*.py[cod]
 *.jsonl
-

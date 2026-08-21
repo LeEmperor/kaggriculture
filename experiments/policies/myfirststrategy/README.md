@@ -20,6 +20,10 @@ The immutable candidate in `candidate_baseline.json` controls thresholds and
 choices such as seed batch size, cash reserve, harvest age, selling price, and
 liquidation day.
 
+This `candidate_baseline.json` represents the params of the model. Aka a given strategy s that implements a policy, has a series of initial params that we feed it. In hardware terms, think of these as configuration registers. We get to decide which params are present and what to do with them.
+
+This stands in contrast to the kaggle-fed params such as the initial prices to a crop, or whatever initial conditions the state space (of the market) takes. Think of this as the configuration of the planet at a time t when we start "farming".
+
 `PolicyState` contains only per-game memory:
 
 - current FSM mode and the step at which it was entered;
@@ -49,7 +53,17 @@ Inspect the final turn:
 tail -n 1 /tmp/myfirststrategy.jsonl | jq
 ```
 
+For a compact iteration report instead of the full turn trace:
+
+```bash
+python3 -m experiments.policy_report --seed 1234
+```
+
+The report includes the result margin, action counts, market units, final
+policy state, and the path to the generated JSONL trace.  In Doom, `SPC o r`
+runs this report in the upper project-rail pane; saving this policy's Python or
+JSON files refreshes the same report in the background.
+
 The reference policy loader uses `make_policy()` when it is present, ensuring
 that each player receives a separate policy instance. `agent()` remains the
 submission-shaped entry point for direct use.
-
