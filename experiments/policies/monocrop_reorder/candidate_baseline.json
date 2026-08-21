@@ -1,6 +1,6 @@
 {
   "$schema": "./parameters.schema.json",
-  "policy_id": "myfirststrategy-v1",
+  "policy_id": "monocrop-reorder-v1",
   "schema_version": 1,
   "parameters": {
     "crop": "WHEAT",

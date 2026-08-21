@@ -1,12 +1,18 @@
-# My First Strategy
+# Monocrop Reorder
 
-`myfirststrategy-v1` is an intentionally small stateful policy used to establish
-the policy/parameter/state architecture. It is a one-tile wheat loop, not a
-competitive strategy.
+`monocrop-reorder-v1` is an intentionally small stateful policy used to establish
+the policy/parameter/state architecture. It is a single-tile monoculture loop,
+not a competitive strategy.
+
+The family is named for its algorithm rather than its crop: a one-tile
+monoculture loop whose seed purchasing is a reorder-point `(s, Q)` inventory
+rule — order `seed_buy_batch` units when stock falls to `seed_reorder_point`,
+subject to a `cash_reserve` floor. `crop` is a parameter; v1 restricts it to
+`WHEAT`, which is a *version* restriction rather than a family one.
 
 The policy:
 
-1. buys a small batch of wheat seeds while preserving a cash reserve;
+1. buys a small batch of seeds while preserving a cash reserve;
 2. plants early enough in the day to water before nightly refresh;
 3. waters the crop;
 4. harvests at the configured age;
@@ -29,7 +35,7 @@ This stands in contrast to the kaggle-fed params such as the initial prices to a
 - current FSM mode and the step at which it was entered;
 - last processed step and last requested farmer action;
 - previous money and the observed money delta;
-- peak wheat price seen; and
+- peak price seen for the configured crop; and
 - diagnostic counts of requested plant, harvest, and sale actions.
 
 Current farm tiles, shed inventory, seed counts, and market inventory are not
@@ -42,15 +48,15 @@ From the repository root:
 ```bash
 python3 -m reference.run_game \
   --seed 1234 \
-  --policy-a experiments.policies.myfirststrategy.policy \
+  --policy-a experiments.policies.monocrop_reorder.policy \
   --policy-b reference.policies.pass_policy \
-  --trace /tmp/myfirststrategy.jsonl
+  --trace /tmp/monocrop-reorder.jsonl
 ```
 
 Inspect the final turn:
 
 ```bash
-tail -n 1 /tmp/myfirststrategy.jsonl | jq
+tail -n 1 /tmp/monocrop-reorder.jsonl | jq
 ```
 
 For a compact iteration report instead of the full turn trace:

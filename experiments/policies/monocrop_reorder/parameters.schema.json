@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kaggriculture.local/policies/myfirststrategy/parameters.schema.json",
-  "title": "myfirststrategy candidate",
+  "$id": "https://kaggriculture.local/policies/monocrop_reorder/parameters.schema.json",
+  "title": "monocrop_reorder candidate",
   "type": "object",
   "additionalProperties": false,
   "required": ["policy_id", "schema_version", "parameters"],
   "properties": {
     "$schema": { "type": "string" },
-    "policy_id": { "const": "myfirststrategy-v1" },
+    "policy_id": { "const": "monocrop-reorder-v1" },
     "schema_version": { "const": 1 },
     "parameters": {
       "type": "object",

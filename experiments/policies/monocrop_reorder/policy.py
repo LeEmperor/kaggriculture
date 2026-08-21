@@ -1,4 +1,7 @@
-"""A small stateful and parameterized wheat-loop research policy."""
+"""Single-tile monoculture loop driven by a reorder-point inventory rule.
+
+v1 pins ``crop`` to WHEAT; the algorithm itself is crop-generic.
+"""
 
 from __future__ import annotations
 
@@ -41,7 +44,7 @@ from experiments.policies.common.observations import (
 
 # globals
 CANDIDATE_PATH = Path(__file__).with_name("candidate_baseline.json")
-POLICY_ID = "myfirststrategy-v1"
+POLICY_ID = "monocrop-reorder-v1"
 SCHEMA_VERSION = 1
 
 
@@ -76,7 +79,7 @@ class PolicyParameters:
 
     def validate(self) -> None:
         if self.crop != "WHEAT":
-            raise ValueError("myfirststrategy-v1 currently supports only WHEAT")
+            raise ValueError("monocrop-reorder-v1 currently supports only WHEAT")
         if self.cash_reserve < 0 or self.seed_reorder_point < 0:
             raise ValueError("cash and seed reserves cannot be negative")
         if self.seed_buy_batch < 1:
@@ -121,8 +124,8 @@ def load_parameters(path: Path = CANDIDATE_PATH) -> PolicyParameters:
 
 
 # Strategy class
-class MyFirstStrategy:
-    """One-tile wheat FSM demonstrating parameters and per-game state."""
+class MonocropReorder:
+    """One-tile monoculture FSM demonstrating parameters and per-game state."""
 
     def __init__(self, parameters: PolicyParameters):
         self.parameters = parameters
@@ -282,10 +285,10 @@ class MyFirstStrategy:
 # required helpers for kaggle
 def make_policy():
     """Construct an isolated callable for one player in one research game."""
-    return MyFirstStrategy(load_parameters()).act
+    return MonocropReorder(load_parameters()).act
 
 
-_SUBMISSION_POLICY = MyFirstStrategy(load_parameters())
+_SUBMISSION_POLICY = MonocropReorder(load_parameters())
 
 
 def agent(observation: dict[str, Any]) -> PolicyAction:

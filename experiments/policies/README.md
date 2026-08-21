@@ -12,4 +12,4 @@ policy families: action constructors, observation accessors, fixed game data,
 and candidate-envelope validation. Strategy decisions, state transitions, and
 tunable parameter validation should remain inside each policy family.
 
-The first example is [`myfirststrategy`](myfirststrategy/README.md).
+The first example is [`monocrop_reorder`](monocrop_reorder/README.md).

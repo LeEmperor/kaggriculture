@@ -1,9 +1,9 @@
 """First stateful, parameterized Kaggriculture research strategy."""
 
-from .policy import MyFirstStrategy, PolicyParameters, PolicyState, agent, make_policy
+from .policy import MonocropReorder, PolicyParameters, PolicyState, agent, make_policy
 
 __all__ = [
-    "MyFirstStrategy",
+    "MonocropReorder",
     "PolicyParameters",
     "PolicyState",
     "agent",

@@ -4,8 +4,8 @@ import unittest
 from dataclasses import FrozenInstanceError
 from typing import Any
 
-from experiments.policies.myfirststrategy.policy import (
-    MyFirstStrategy,
+from experiments.policies.monocrop_reorder.policy import (
+    MonocropReorder,
     PolicyParameters,
     load_parameters,
 )
@@ -58,10 +58,10 @@ def observation(
     }
 
 
-class MyFirstStrategyTest(unittest.TestCase):
+class MonocropReorderTest(unittest.TestCase):
     def setUp(self) -> None:
         self.parameters = load_parameters()
-        self.policy = MyFirstStrategy(self.parameters)
+        self.policy = MonocropReorder(self.parameters)
 
     def test_parameters_are_immutable(self) -> None:
         with self.assertRaises(FrozenInstanceError):
@@ -102,14 +102,14 @@ class MyFirstStrategyTest(unittest.TestCase):
             }
         )
         low_threshold = self.policy.act(observation(shed_wheat=2, wheat_price=25))
-        high_threshold = MyFirstStrategy(altered).act(
+        high_threshold = MonocropReorder(altered).act(
             observation(shed_wheat=2, wheat_price=25)
         )
         self.assertEqual(low_threshold["market"][0], ["SELL", "WHEAT", 2])
         self.assertNotIn(["SELL", "WHEAT", 2], high_threshold["market"])
 
     def test_reference_loader_constructs_isolated_instances(self) -> None:
-        module = "experiments.policies.myfirststrategy.policy"
+        module = "experiments.policies.monocrop_reorder.policy"
         first = load_policy(module)
         second = load_policy(module)
         self.assertIsNot(first.__self__, second.__self__)

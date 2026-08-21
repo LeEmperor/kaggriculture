@@ -102,13 +102,13 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument(
         "--policy-a",
-        default="experiments.policies.myfirststrategy.policy",
+        default="experiments.policies.monocrop_reorder.policy",
     )
     parser.add_argument("--policy-b", default="reference.policies.pass_policy")
     parser.add_argument(
         "--trace",
         type=Path,
-        default=Path("experiments/results/myfirststrategy-latest.jsonl"),
+        default=Path("experiments/results/monocrop-reorder-latest.jsonl"),
     )
     args = parser.parse_args()
 
