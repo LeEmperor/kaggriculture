@@ -7,5 +7,9 @@ be data artifacts rather than copies of the Python implementation.
 These policies are research code. A promoted champion will later be distilled
 into `submission/main.py` and checked for action parity.
 
-The first example is [`myfirststrategy`](myfirststrategy/README.md).
+The [`common`](common/) package contains stable game-contract helpers shared by
+policy families: action constructors, observation accessors, fixed game data,
+and candidate-envelope validation. Strategy decisions, state transitions, and
+tunable parameter validation should remain inside each policy family.
 
+The first example is [`myfirststrategy`](myfirststrategy/README.md).

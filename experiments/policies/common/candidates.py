@@ -24,7 +24,8 @@ def candidate_parameters(
     """Validate the shared candidate envelope and return its parameters."""
     if candidate.get("policy_id") != expected_policy_id:
         raise ValueError(f"candidate policy_id must be {expected_policy_id}")
-    if candidate.get("schema_version") != expected_schema_version:
+    schema_version = candidate.get("schema_version")
+    if type(schema_version) is not int or schema_version != expected_schema_version:
         raise ValueError(
             f"candidate schema_version must be {expected_schema_version}"
         )

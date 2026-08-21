@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+# grab in common items -> functions that add some little abstraction
 from experiments.policies.common.actions import (
     MarketOrder,
     PolicyAction,
@@ -19,11 +20,17 @@ from experiments.policies.common.actions import (
     sell,
     water,
 )
+
+# strategy-level parameter loaders
 from experiments.policies.common.candidates import (
     candidate_parameters,
     load_candidate,
 )
+
+# seed catalog
 from experiments.policies.common.game_data import seed_cost
+
+# helpers for looking at current state, such as which tile I'm on, what's in my inventory, or which quadrant im in
 from experiments.policies.common.observations import (
     carried_units,
     current_tile,
@@ -32,6 +39,7 @@ from experiments.policies.common.observations import (
     own_farm,
 )
 
+# globals
 CANDIDATE_PATH = Path(__file__).with_name("candidate_baseline.json")
 POLICY_ID = "myfirststrategy-v1"
 SCHEMA_VERSION = 1
@@ -83,6 +91,8 @@ class PolicyParameters:
             raise ValueError("liquidation_start_day must be within the season")
 
 
+# This is the internal state by which the policy cares about
+# aka we control which registers and things we actually care to remember in between states or turns or any granularity of time
 @dataclass
 class PolicyState:
     """Mutable memory belonging to one player in one episode."""
@@ -105,10 +115,12 @@ class PolicyState:
         return result
 
 
+# load the model's params
 def load_parameters(path: Path = CANDIDATE_PATH) -> PolicyParameters:
     return PolicyParameters.from_candidate(load_candidate(path))
 
 
+# Strategy class
 class MyFirstStrategy:
     """One-tile wheat FSM demonstrating parameters and per-game state."""
 
@@ -153,7 +165,7 @@ class MyFirstStrategy:
         self.state.previous_money = money
 
         # get current wheat price
-        wheat_price = int(market.get("prices", {}).get("WHEAT", 0))
+        wheat_price = item_count(market.get("prices"), self.parameters.crop)
 
         # store market stats
         self.state.peak_wheat_price = max(self.state.peak_wheat_price, wheat_price)
@@ -204,7 +216,9 @@ class MyFirstStrategy:
             and seeds <= self.parameters.seed_reorder_point
             and can_preserve_reserve
         ):
-            actions.append(buy_seed(self.parameters.crop, self.parameters.seed_buy_batch))
+            actions.append(
+                buy_seed(self.parameters.crop, self.parameters.seed_buy_batch)
+            )
         return actions
 
     # helper for farm actions
