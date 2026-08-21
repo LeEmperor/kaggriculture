@@ -2,8 +2,8 @@
 
      kag_sim.exe bench [--games N]
 
-   The bench number measures the PASS scaffold, not the simulator — see
-   docs/benchmark_baseline.md before quoting it anywhere. *)
+   The bench drives PASS tapes through the full rule set — not a policy
+   workload; see docs/benchmark_baseline.md before quoting it anywhere. *)
 
 let parse_games argv =
   let games = ref 100_000 in
@@ -33,7 +33,7 @@ let benchmark argv =
   for game = 0 to games - 1 do
     let state = Kag_model.Model.initial_state Kag_model.Model.default_config in
     while state.Kag_model.Model.status = Kag_model.Model.Active do
-      Kag_model.Model.step state Kag_model.Model.Pass Kag_model.Model.Pass;
+      Kag_model.Model.step state Kag_model.Model.pass_action Kag_model.Model.pass_action;
       incr transitions
     done;
     checksum
@@ -43,7 +43,7 @@ let benchmark argv =
   done;
   let seconds = Unix.gettimeofday () -. started in
   Printf.printf
-    "backend=ocaml-scalar-pass-scaffold\n\
+    "backend=ocaml-scalar-pass-tape\n\
      games=%d\n\
      transitions=%d\n\
      seconds=%.3f\n\

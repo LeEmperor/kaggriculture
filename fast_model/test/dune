@@ -1,4 +1,12 @@
 (test
  (name kag_model_test)
- (libraries kag_model yojson)
- (deps python_random_fixture.json))
+ (libraries kag_model kag_serialize yojson)
+ (deps
+  python_random_fixture.json
+  model_group1_fixture.json
+  model_group2_fixture.json
+  model_group3_fixture.json
+  model_group4_fixture.json
+  model_group5_fixture.json
+  model_group6_fixture.json
+  model_group7_fixture.json))

@@ -22,13 +22,14 @@ test/        validation_test — what Family.create must refuse
 
 ## Commands
 
-Run from this directory, on the `5.2.0+ox` opam switch (already the shell
-default; `dune` resolves from `~/.opam/5.2.0+ox/bin`).
+Run from the repository root (the dune workspace lives there and also covers
+`fast_model/`), on the `5.2.0+ox` opam switch — already the shell default;
+`dune` resolves from `~/.opam/5.2.0+ox/bin`.
 
 ```sh
 dune build          # type-check everything; an ill-kinded family fails here
 dune test           # validation negative tests + the real family's positive case
-dune exec bin/emit.exe > ../experiments/policies/monocrop_reorder/family.json
+dune exec authoring/bin/emit.exe > experiments/policies/monocrop_reorder/family.json
 ```
 
 ## Where each class of mistake is caught

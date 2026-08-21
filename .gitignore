@@ -1,5 +1,3 @@
-/build/
-/build-*/
 /.venv/
 /reference/upstream/
 /experiments/results/

@@ -1,0 +1,6 @@
+; Diagnostic serialization lives outside the engine library on purpose (game
+; plan Phase 3: "Keep diagnostic serialization separate from public
+; observation construction") — the transition loop never touches JSON.
+(library
+ (name kag_serialize)
+ (libraries kag_model yojson))
