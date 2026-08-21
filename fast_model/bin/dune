@@ -1,0 +1,3 @@
+(executable
+ (name kag_sim)
+ (libraries kag_model unix))

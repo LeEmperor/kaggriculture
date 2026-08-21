@@ -1,0 +1,4 @@
+(test
+ (name kag_model_test)
+ (libraries kag_model yojson)
+ (deps python_random_fixture.json))
