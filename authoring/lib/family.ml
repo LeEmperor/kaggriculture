@@ -215,6 +215,7 @@ let create
   ~farmer_cascade
   ~commit
   =
+  (* register represent internal memory of the strategy *)
   if registers = [] then failwith "a family needs at least one register";
   let param_names = List.map (fun (P p) -> p.Expr.p_name) parameters in
   let reg_names = List.map (fun (R r) -> r.Expr.r_name) registers in

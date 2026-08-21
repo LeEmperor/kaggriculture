@@ -1,0 +1,63 @@
+{
+  "policy_id": "funkystrat-v1",
+  "family": "funkystrat",
+  "family_version": 1,
+  "dsl_version": 1,
+  "parameters": { "crop": { "type": "enum", "values": [ "WHEAT" ] } },
+  "registers": {
+    "last_step": { "type": "int", "init": -1, "class": "decision" },
+    "turns_seen": { "type": "int", "init": 0, "class": "telemetry" },
+    "seeds_bought": { "type": "bool", "init": false, "class": "decision" }
+  },
+  "reset_when": [
+    "and",
+    [ "==", [ "obs", "step" ], [ "const", 0 ] ],
+    [ ">=", [ "state", "last_step" ], [ "const", 0 ] ]
+  ],
+  "observe": [],
+  "market_rules": [
+    {
+      "name": "stock_up",
+      "when": [
+        "and",
+        [ "not", [ "state", "seeds_bought" ] ],
+        [ ">=", [ "obs", "money" ], [ "const", 500 ] ]
+      ],
+      "emit": [ "BUY_SEED", [ "param", "crop" ], [ "const", 1 ] ]
+    },
+    {
+      "name": "mashallah_rule",
+      "when": [
+        "and",
+        [ ">", [ "obs", "shed_units" ], [ "const", 0 ] ],
+        [ ">=", [ "obs", "market_price" ], [ "const", 30 ] ]
+      ],
+      "emit": [ "SELL", [ "param", "crop" ], [ "obs", "shed_units" ] ]
+    }
+  ],
+  "farmer_cascade": [
+    {
+      "name": "plant_it",
+      "when": [
+        "and",
+        [ "obs", "tile_is_empty" ],
+        [ ">", [ "obs", "seeds" ], [ "const", 0 ] ]
+      ],
+      "emit": [ "PLANT", [ "param", "crop" ] ]
+    },
+    { "name": "idle", "when": [ "const", true ], "emit": [ "PASS" ] }
+  ],
+  "commit": [
+    { "reg": "last_step", "value": [ "obs", "step" ] },
+    {
+      "reg": "turns_seen",
+      "value": [ "+", [ "state", "turns_seen" ], [ "const", 1 ] ]
+    },
+    {
+      "reg": "seeds_bought",
+      "value": [
+        "or", [ "state", "seeds_bought" ], [ "fired?", "market", "stock_up" ]
+      ]
+    }
+  ]
+}

@@ -23,3 +23,20 @@ let tile_is_plant = Obs.bool "tile_is_plant"
 let tile_planted_day = Obs.int "tile_planted_day"
 let tile_yield_units = Obs.int "tile_yield_units"
 let tile_watered_today = Obs.bool "tile_watered_today"
+
+(* Which parameters each accessor reads — the mirror of REQUIRES in
+   submission/vocabulary.py. Four accessors resolve their item through the candidate's
+   [crop], so a family reading one of them must declare a parameter by that name; the
+   others read none and are absent here.
+
+   This table is declarative on the OCaml side. Policy_family is game-agnostic and so
+   cannot consume it, which leaves Interpreter.__init__ on the Python side as the
+   enforcing gate — the same division of labour as the emit signatures in actions.ml. Keep
+   the two lists identical. *)
+let requires =
+  [ "seeds", [ "crop" ]
+  ; "shed_units", [ "crop" ]
+  ; "market_price", [ "crop" ]
+  ; "seed_cost", [ "crop" ]
+  ]
+;;

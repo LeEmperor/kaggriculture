@@ -16,7 +16,7 @@ on a tile that is not a plant.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .cascade import Firing, fired_names, select_all, select_first
@@ -34,10 +34,18 @@ class Vocabulary:
     before any observation exists and the second only afterwards, and because
     keeping the declaration next to the implementation is what stops the two
     drifting apart.
+
+    ``requires`` records the third thing a caller cannot otherwise see: which
+    *parameters* an accessor reads. An accessor that resolves an item through
+    ``parameters["crop"]`` is undefined for a family that declares no such
+    parameter, and nothing in ``kinds`` says so. Listing the dependency here is
+    what lets that be caught before the episode starts rather than as a
+    ``KeyError`` on turn 0. Accessors that read no parameter are simply absent.
     """
 
     kinds: Mapping[str, Kind]
     accessors: Mapping[str, Callable[[Any, Mapping[str, Value]], Value]]
+    requires: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         undeclared = sorted(set(self.accessors) - set(self.kinds))
@@ -47,6 +55,12 @@ class Vocabulary:
                 "vocabulary",
                 f"declared-but-missing: {unimplemented or '<none>'}; "
                 f"implemented-but-undeclared: {undeclared or '<none>'}",
+            )
+        stray = sorted(set(self.requires) - set(self.kinds))
+        if stray:
+            raise DslError(
+                "vocabulary.requires",
+                f"names no accessor declares: {', '.join(stray)}",
             )
 
 
@@ -74,6 +88,25 @@ class Interpreter:
         missing = sorted(set(family.parameters) - set(parameters))
         if missing:
             raise DslError("interpreter", f"unbound parameters: {', '.join(missing)}")
+
+        # Every accessor this family actually reads must have the parameters it
+        # depends on. Checked here because this is the first point at which the
+        # family, the vocabulary, and the bound parameters are all in hand.
+        undeclared: dict[str, list[str]] = {}
+        for observation in sorted(family.observation_names()):
+            for name in vocabulary.requires.get(observation, ()):
+                if name not in parameters:
+                    undeclared.setdefault(name, []).append(observation)
+        if undeclared:
+            detail = "; ".join(
+                f"'{name}' (needed by {', '.join(readers)})"
+                for name, readers in sorted(undeclared.items())
+            )
+            raise DslError(
+                "interpreter",
+                f"family declares no parameter {detail}",
+            )
+
         self.family = family
         self.parameters = dict(parameters)
         self.vocabulary = vocabulary

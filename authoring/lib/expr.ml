@@ -74,6 +74,12 @@ type eq =
   | Equal
   | Not_equal
 
+(* an expression has some type t, aka we have an object o, which we may loosely say is
+   related to, or derive from Expr *)
+(* in particular we have defined '_ t', which is a blanket matching algebraic type t, of
+   which a given object can take *)
+(* for example, we can declare an operand as an Expr.t, meaning that it is of one of the
+   following types listed below *)
 type _ t =
   | Const : 'k value -> 'k t
   | Param : 'k param -> 'k t

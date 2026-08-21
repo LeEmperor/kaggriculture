@@ -3,7 +3,11 @@
    Usage: dune exec bin/emit.exe [FAMILY] With no argument, or "monocrop_reorder", emits
    monocrop-reorder-v1. *)
 
-let families = [ ("monocrop_reorder", fun () -> Families.Monocrop_reorder.family) ]
+let families =
+  [ ("monocrop_reorder", fun () -> Families.Monocrop_reorder.family)
+  ; ("funkystrat_v1", fun () -> Families.Funkystrat_v1.family)
+  ]
+;;
 
 let () =
   let name =

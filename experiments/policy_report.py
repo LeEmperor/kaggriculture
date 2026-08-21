@@ -23,11 +23,17 @@ def _format_counts(counts: Counter[str]) -> str:
 
 
 def _policy_state(policy: Policy) -> dict[str, Any] | None:
-    """Return a policy's optional diagnostic snapshot without requiring it."""
+    """Return a policy's optional diagnostic snapshot without requiring it.
+
+    Two shapes hold registers. A hand-written family keeps them in a ``.state``
+    dataclass; the DSL's ``Policy`` *is* the register bank and exposes
+    ``snapshot()`` on itself. Falling back to the owner covers the second, so
+    that data-defined families are not silently reported without their state.
+    """
     owner = getattr(policy, "__self__", None)
-    state = getattr(owner, "state", None)
+    holder = getattr(owner, "state", None) or owner
     snapshot: Callable[[], dict[str, Any]] | None = getattr(
-        state, "snapshot", None
+        holder, "snapshot", None
     )
     return snapshot() if callable(snapshot) else None
 

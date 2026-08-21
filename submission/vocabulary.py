@@ -231,4 +231,20 @@ ACCESSORS = {
     "tile_watered_today": _tile_watered_today,
 }
 
-VOCABULARY = Vocabulary(kinds=KINDS, accessors=ACCESSORS)
+# Which parameters each accessor reads. Four of them resolve an item through
+# ``parameters["crop"]``, so a family that reads one but declares no ``crop``
+# parameter is not merely unusual -- it is undefined, and used to surface as a
+# KeyError on turn 0 rather than as a load failure. Accessors reading no
+# parameter are absent rather than mapped to an empty tuple.
+#
+# Mirrored on the authoring side by ``requires`` in
+# ``authoring/kaggriculture/vocabulary.ml``; the check itself lives in
+# ``Interpreter.__init__``.
+REQUIRES: Mapping[str, tuple[str, ...]] = {
+    "seeds": ("crop",),
+    "shed_units": ("crop",),
+    "market_price": ("crop",),
+    "seed_cost": ("crop",),
+}
+
+VOCABULARY = Vocabulary(kinds=KINDS, accessors=ACCESSORS, requires=REQUIRES)

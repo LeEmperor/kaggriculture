@@ -1,1 +1,15 @@
 profile = janestreet
+
+# The janestreet profile sets both of these to "compact", which deletes every
+# blank line inside a function body and between one-line toplevel items. That
+# is Jane Street's house style -- they factor into smaller functions rather
+# than paragraphing long ones -- but it is a profile setting, not a language
+# rule, and it fights readable grouping in the long validators here.
+#
+# Caveat: "preserve-one" has an ocamlformat bug. A body that is a *pure*
+# `let ... in` chain, with no `;` statement anywhere in it, and two or more
+# blank lines, collapses to a hanging indent under `let f x = let a = ... in`
+# and stays stuck there. Bodies containing a `;` statement are unaffected, as
+# is a pure chain with a single blank line.
+sequence-blank-line = preserve-one
+module-item-spacing = preserve

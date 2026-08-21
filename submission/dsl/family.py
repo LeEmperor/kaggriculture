@@ -28,6 +28,8 @@ from .expr import (
     DslError,
     Expr,
     Kind,
+    Obs,
+    Op,
     Stage,
     TypeEnv,
     Value,
@@ -95,6 +97,24 @@ class Family:
             if register.cls == "decision"
         )
 
+    def observation_names(self) -> frozenset[str]:
+        """Every observation this family reads, across all four stages.
+
+        Used by the interpreter to check an accessor's parameter dependencies
+        before the episode starts, so that a vocabulary entry needing a
+        parameter the family never declared is a load-time error rather than a
+        turn-0 ``KeyError``.
+        """
+        names: set[str] = set()
+        _collect_observations(self.reset_when, names)
+        for write in (*self.observe, *self.commit):
+            _collect_observations(write.value, names)
+        for rule in (*self.market_rules, *self.farmer_cascade):
+            _collect_observations(rule.when, names)
+            for operand in rule.emit.operands:
+                _collect_observations(operand, names)
+        return frozenset(names)
+
     def bind(self, parameters: Mapping[str, Any]) -> dict[str, Value]:
         """Validate a candidate's parameter block against the declared schema."""
         missing = sorted(set(self.parameters) - set(parameters))
@@ -108,6 +128,15 @@ class Family:
         for name, spec in self.parameters.items():
             bound[name] = _check_parameter(spec, parameters[name])
         return bound
+
+
+def _collect_observations(expr: Expr, into: set[str]) -> None:
+    """Accumulate every ``["obs", name]`` leaf reachable from ``expr``."""
+    if isinstance(expr, Obs):
+        into.add(expr.name)
+    elif isinstance(expr, Op):
+        for arg in expr.args:
+            _collect_observations(arg, into)
 
 
 def load(

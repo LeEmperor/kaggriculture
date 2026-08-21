@@ -1,0 +1,7 @@
+{
+  "policy_id": "funkystrat-v1",
+  "schema_version": 1,
+  "parameters": {
+    "crop": "WHEAT"
+  }
+}
