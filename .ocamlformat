@@ -13,3 +13,11 @@ profile = janestreet
 # is a pure chain with a single blank line.
 sequence-blank-line = preserve-one
 module-item-spacing = preserve
+
+# The janestreet profile sets parse-docstrings = true, which makes ocamlformat
+# read every (* ... *) as odoc markup and re-render it -- collapsing manually
+# aligned tables into a single reflowed paragraph. Turning it off makes comment
+# bodies verbatim: indentation, alignment, and over-margin lines are all left
+# exactly as typed. Comments are still reindented as a block, just not rewritten
+# internally. (wrap-comments is subsumed by this and does not need setting.)
+parse-docstrings = false

@@ -295,6 +295,12 @@ type market_order =
       ; count : int
       }
   | Buy_land
+  (* An order slot upstream counts but cannot execute: _parse_order returned None (bad
+     arity, non-integer or non-positive count, unrecognized op) or the lockstep's quote
+     phase hit its "malformed sub-op; abort" branch (an item outside the op's domain).
+     Both leave the player idle for that slot while still occupying it, so the slot must
+     survive parsing — dropping it would shorten max_len and skip a price refresh. *)
+  | Bad_order
 
 type player_action =
   { farmer : unit_op
@@ -837,6 +843,7 @@ let process_market state (actions : player_action array) =
             (* Atomic orders resolve once, in player order, before lockstep. *)
             do_hire state ~player
           | Buy_land -> do_buy_land state ~player
+          | Bad_order -> () (* occupies the slot, does nothing *)
           | Buy_seed { count; _ }
           | Buy_animal { count; _ }
           | Sell { count; _ }
@@ -848,7 +855,12 @@ let process_market state (actions : player_action array) =
               remaining.(player) <- count)))
       queues;
     let progressing = ref true in
-    while !progressing do
+    (* Upstream's runaway guard: the lockstep body runs at most 99,999 times per order
+       index, then aborts the index outright. Reachable only when one order can commit
+       that many units — a cheap seed against a very large bankroll. *)
+    let iterations = ref 0 in
+    while !progressing && !iterations < 99_999 do
+      incr iterations;
       (* Quote phase: both players see the same pre-commit inventory. *)
       let quoted_any = ref false in
       for player = 0 to player_count - 1 do
@@ -859,7 +871,8 @@ let process_market state (actions : player_action array) =
           quoted_any := true;
           quoted_price.(player)
           <- (match order with
-              | Hire | Buy_land -> 0 (* unreachable: handled atomically above *)
+              | Hire | Buy_land | Bad_order ->
+                0 (* unreachable: never entered into [kinds] *)
               | Buy_seed { crop; _ } -> seed_costs.(crop)
               | Buy_animal { animal; _ } -> animal_costs.(animal)
               | Sell { item; _ } ->
@@ -884,7 +897,7 @@ let process_market state (actions : player_action array) =
             let price = quoted_price.(player) in
             let ok =
               match order with
-              | Hire | Buy_land -> false
+              | Hire | Buy_land | Bad_order -> false
               | Buy_seed { crop; _ } ->
                 if farm.money >= float_of_int price
                 then (
@@ -1092,9 +1105,17 @@ let step state (action0 : player_action) (action1 : player_action) =
       in
       count_demand action.farmer;
       Array.iter count_demand action.hands;
+      (* The blocked set is fixed before any unit acts, from the seed counts as they
+         stand at the start of the turn. Re-reading the live count per unit would let an
+         earlier unit's plant block a later one, which upstream never does: it builds
+         [blocked] once and only then applies anything. [demand] is reused as the flag so
+         the transition still allocates nothing beyond it. *)
       let seeds = state.privates.(player).seeds in
+      for crop = 0 to crop_count - 1 do
+        if demand.(crop) > seeds.(crop) then demand.(crop) <- -1
+      done;
       let allowed = function
-        | Plant_crop { crop } when demand.(crop) > seeds.(crop) -> Unit_pass
+        | Plant_crop { crop } when demand.(crop) < 0 -> Unit_pass
         | op -> op
       in
       apply_unit_action state ~player ~unit:0 (allowed action.farmer);

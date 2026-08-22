@@ -144,25 +144,9 @@ let to_number json =
 ;;
 
 let config_of_case case =
-  let configuration = member "configuration" case in
-  let field name = member name configuration in
-  { Model.episode_steps = to_int (field "episodeSteps")
-  ; turns_per_day = to_int (field "turnsPerDay")
-  ; board_size = to_int (field "boardSize")
-  ; starting_money = to_int (field "startingMoney")
-  ; shed_capacity = to_int (field "shedCapacity")
-  ; max_market_orders_per_turn = to_int (field "maxMarketOrdersPerTurn")
-  ; farm_hand_cost_mult = to_int (field "farmHandCostMult")
-  ; weed_spawn_chance = to_number (field "weedSpawnChance")
-  ; town_shop_unlock_interval = to_int (field "townShopUnlockInterval")
-  ; town_shop_sell_interval = to_int (field "townShopSellInterval")
-  ; town_center_sell_interval = to_int (field "townCenterSellInterval")
-  ; seed = to_int (member "seed" case)
-  ; market_params =
-      (match field "marketParams" with
-       | `Null | `Assoc [] -> None
-       | json -> Some (Kag_serialize.market_curves_of_json json))
-  }
+  Kag_serialize.config_of_json
+    ~seed:(to_int (member "seed" case))
+    (member "configuration" case)
 ;;
 
 let check_json label expected actual =
@@ -304,6 +288,23 @@ let tape_case_matches_oracle ~group case =
   check_json (label "final diagnostic state") final model_final
 ;;
 
+(* ---------------- python_int vs CPython ---------------- *)
+
+(* Upstream applies int() to raw tape values in two places whose consequences differ —
+   _parse_order catches its exceptions, _apply_unit_action does not — so every
+   disagreement between this and CPython is a differential divergence. *)
+let python_int_matches_cpython entry =
+  let text = to_string (member "json" entry) in
+  let label suffix = Printf.sprintf "python_int %s: %s" text suffix in
+  let actual = Kag_serialize.python_int (Yojson.Safe.from_string text) in
+  match member "value" entry, member "saturates" entry, member "raises" entry with
+  | `Int expected, _, _ -> check (actual = Some expected) (label "value")
+  | _, `String "max", _ -> check (actual = Some max_int) (label "saturates high")
+  | _, `String "min", _ -> check (actual = Some min_int) (label "saturates low")
+  | _, _, `Bool true -> check (actual = None) (label "raises")
+  | _ -> check false (label "malformed fixture entry")
+;;
+
 (* ---------------- Python_random vs CPython ---------------- *)
 
 let ints_of json = List.map Yojson.Safe.Util.to_int (Yojson.Safe.Util.to_list json)
@@ -381,6 +382,8 @@ let () =
   List.iter
     (tape_case_matches_oracle ~group:"group7")
     (Yojson.Safe.Util.to_list group7_fixture);
+  let int_fixture = Yojson.Safe.from_file "python_int_fixture.json" in
+  List.iter python_int_matches_cpython (Yojson.Safe.Util.to_list int_fixture);
   let fixture = Yojson.Safe.from_file "python_random_fixture.json" in
   List.iter rng_matches_cpython (Yojson.Safe.Util.to_list fixture);
   if !failures > 0

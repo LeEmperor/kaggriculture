@@ -1,0 +1,182 @@
+[
+ {
+  "json": "0",
+  "value": 0
+ },
+ {
+  "json": "1",
+  "value": 1
+ },
+ {
+  "json": "-1",
+  "value": -1
+ },
+ {
+  "json": "42",
+  "value": 42
+ },
+ {
+  "json": "-7",
+  "value": -7
+ },
+ {
+  "json": "1000000",
+  "value": 1000000
+ },
+ {
+  "json": "2.9",
+  "value": 2
+ },
+ {
+  "json": "-2.9",
+  "value": -2
+ },
+ {
+  "json": "0.0",
+  "value": 0
+ },
+ {
+  "json": "-0.5",
+  "value": 0
+ },
+ {
+  "json": "1e3",
+  "value": 1000
+ },
+ {
+  "json": "2.5e-1",
+  "value": 0
+ },
+ {
+  "json": "true",
+  "value": 1
+ },
+ {
+  "json": "false",
+  "value": 0
+ },
+ {
+  "json": "null",
+  "raises": true
+ },
+ {
+  "json": "\"3\"",
+  "value": 3
+ },
+ {
+  "json": "\"-3\"",
+  "value": -3
+ },
+ {
+  "json": "\"+3\"",
+  "value": 3
+ },
+ {
+  "json": "\" 12 \"",
+  "value": 12
+ },
+ {
+  "json": "\"\\t12\\n\"",
+  "value": 12
+ },
+ {
+  "json": "\"\\u000b7\\u000c\"",
+  "value": 7
+ },
+ {
+  "json": "\"1_000\"",
+  "value": 1000
+ },
+ {
+  "json": "\"+1_0\"",
+  "value": 10
+ },
+ {
+  "json": "\"-1_000_000\"",
+  "value": -1000000
+ },
+ {
+  "json": "\"0_10\"",
+  "value": 10
+ },
+ {
+  "json": "\"1__0\"",
+  "raises": true
+ },
+ {
+  "json": "\"_1\"",
+  "raises": true
+ },
+ {
+  "json": "\"1_\"",
+  "raises": true
+ },
+ {
+  "json": "\"0x10\"",
+  "raises": true
+ },
+ {
+  "json": "\"0b11\"",
+  "raises": true
+ },
+ {
+  "json": "\"1.5\"",
+  "raises": true
+ },
+ {
+  "json": "\"abc\"",
+  "raises": true
+ },
+ {
+  "json": "\"\"",
+  "raises": true
+ },
+ {
+  "json": "\"   \"",
+  "raises": true
+ },
+ {
+  "json": "\"1 000\"",
+  "raises": true
+ },
+ {
+  "json": "\"--1\"",
+  "raises": true
+ },
+ {
+  "json": "\"+\"",
+  "raises": true
+ },
+ {
+  "json": "\"-\"",
+  "raises": true
+ },
+ {
+  "json": "[1]",
+  "raises": true
+ },
+ {
+  "json": "[]",
+  "raises": true
+ },
+ {
+  "json": "{}",
+  "raises": true
+ },
+ {
+  "json": "{\"n\": 2}",
+  "raises": true
+ },
+ {
+  "json": "\"9223372036854775808\"",
+  "saturates": "max"
+ },
+ {
+  "json": "\"-9223372036854775809\"",
+  "saturates": "min"
+ },
+ {
+  "json": "\"10000000000000000000000\"",
+  "saturates": "max"
+ }
+]

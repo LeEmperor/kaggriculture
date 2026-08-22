@@ -3,6 +3,7 @@
  (libraries kag_model kag_serialize yojson)
  (deps
   python_random_fixture.json
+  python_int_fixture.json
   model_group1_fixture.json
   model_group2_fixture.json
   model_group3_fixture.json

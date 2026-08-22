@@ -365,6 +365,36 @@ let market_curves_of_json (json : Yojson.Safe.t) : Model.market_curve array =
     product_names
 ;;
 
+(* The engine configuration carried by a fixture or a differential bundle: the upstream
+   scalar names, plus the resolved marketParams table when one is in play. *)
+let config_of_json ~seed (json : Yojson.Safe.t) : Model.config =
+  let field name = Yojson.Safe.Util.member name json in
+  let int name = Yojson.Safe.Util.to_int (field name) in
+  let number name =
+    match field name with
+    | `Int value -> float_of_int value
+    | `Float value -> value
+    | _ -> failwith (Printf.sprintf "configuration %s must be a number" name)
+  in
+  { Model.episode_steps = int "episodeSteps"
+  ; turns_per_day = int "turnsPerDay"
+  ; board_size = int "boardSize"
+  ; starting_money = int "startingMoney"
+  ; shed_capacity = int "shedCapacity"
+  ; max_market_orders_per_turn = int "maxMarketOrdersPerTurn"
+  ; farm_hand_cost_mult = int "farmHandCostMult"
+  ; weed_spawn_chance = number "weedSpawnChance"
+  ; town_shop_unlock_interval = int "townShopUnlockInterval"
+  ; town_shop_sell_interval = int "townShopSellInterval"
+  ; town_center_sell_interval = int "townCenterSellInterval"
+  ; seed
+  ; market_params =
+      (match field "marketParams" with
+       | `Null | `Assoc [] -> None
+       | json -> Some (market_curves_of_json json))
+  }
+;;
+
 let player_action_of_json (json : Yojson.Safe.t) : Model.player_action =
   let member name =
     match json with
@@ -381,6 +411,240 @@ let player_action_of_json (json : Yojson.Safe.t) : Model.player_action =
   { Model.farmer = unit_op_of_json (member "farmer")
   ; hands = to_array unit_op_of_json (member "hands")
   ; market = to_array market_order_of_json (member "market")
+  }
+;;
+
+(* ---------------- tolerant action tapes (the Phase 4 differential runner) ------------ *)
+
+(* Upstream never rejects an action: every malformed or inapplicable one is a silent
+   no-op. This is the total function from raw tape JSON onto the typed surface that
+   reproduces that collapse, so a fuzz tape can be replayed verbatim in both backends.
+   Two collapses, each exact rather than approximate:
+
+   - A malformed unit action has no side effect whatsoever upstream — _apply_unit_action
+     returns before touching state — so it maps to [Unit_pass]. The atomic-PLANT pre-pass
+     does still count a PLANT of an unrecognized crop, but the only actions it can then
+     block are PLANTs of that same unrecognized crop, which are themselves no-ops.
+   - A malformed market order still occupies an order slot, so it maps to [Bad_order]
+     rather than being dropped: max_len drives the per-index price refresh.
+
+   Outside that lies a domain upstream leaves undefined, where it raises out of the
+   interpreter instead of no-opping: the uncaught [int(action[2])] in PICKUP / PLACE, and
+   dict lookups that hash an unhashable action element. The framework turns those into an
+   agent ERROR, which the oracle adapter has no authority over
+   (docs/reference_semantics.md), so they are excluded from the differential domain.
+   Whether upstream reaches the raising expression at all can depend on live state (the
+   PICKUP adjacency guard runs before its [int()]), which a parser cannot know, so this
+   raises whenever the raise is reachable at all. Tape generators must not emit them. *)
+
+exception Undefined_mapping of string
+
+let undefined json =
+  raise
+    (Undefined_mapping
+       ("outside the differential action domain: " ^ Yojson.Safe.to_string json))
+;;
+
+(* Only dicts and lists are unhashable among the values a JSON tape can carry; [op in
+   FARMER_MOVES], [crop not in CROPS] and [shed.get(item)] all hash their argument. *)
+let hashable (json : Yojson.Safe.t) =
+  match json with
+  | `List _ | `Assoc _ -> false
+  | _ -> true
+;;
+
+(* Python's [int(x)] over the same values; [None] is "int() would raise", which upstream
+   catches for market orders and does not catch for unit actions.
+
+   Numeric strings are accepted because Python accepts them, underscore separators
+   included ([int "1_000" = 1000], PEP 515). The grammar below is Python's exactly for
+   ASCII input — sign, then digits with single underscores strictly between digits — so
+   it rejects what Python rejects ("0x10", "1__0", "_1", "1_") and, unlike OCaml's own
+   [int_of_string], does not quietly accept the first two. Python also reads non-ASCII
+   decimal digits; nothing generates those, and the two callers below diverge safely on
+   them (a market order treats them as malformed, a unit action raises).
+
+   Python integers are unbounded and OCaml's are not, so a magnitude past [max_int]
+   saturates instead of failing. That is exact rather than approximate for both callers:
+   every count is consumed by a [min] against stock, or by a lockstep that aborts the
+   moment a unit cannot commit, and neither can reach 2^62 iterations. *)
+let python_int (json : Yojson.Safe.t) : int option =
+  match json with
+  | `Bool value -> Some (if value then 1 else 0)
+  | `Int value -> Some value
+  | `Float value ->
+    if Float.is_finite value then Some (int_of_float (Float.trunc value)) else None
+  | `String value ->
+    let is_space = function
+      | ' ' | '\t' | '\n' | '\r' | '\011' | '\012' -> true
+      | _ -> false
+    in
+    let length = String.length value in
+    let start = ref 0
+    and stop = ref length in
+    while !start < !stop && is_space value.[!start] do
+      incr start
+    done;
+    while !stop > !start && is_space value.[!stop - 1] do
+      decr stop
+    done;
+    let text = String.sub value !start (!stop - !start) in
+    let length = String.length text in
+    let digit i = i < length && text.[i] >= '0' && text.[i] <= '9' in
+    let body = if length > 0 && (text.[0] = '+' || text.[0] = '-') then 1 else 0 in
+    (* digit (('_')? digit)* — an underscore must have a digit on both sides. *)
+    let rec scan i =
+      if digit i
+      then scan (i + 1)
+      else if i < length && text.[i] = '_'
+      then digit (i + 1) && scan (i + 1)
+      else i = length
+    in
+    if (not (digit body)) || not (scan body)
+    then None
+    else (
+      match int_of_string_opt text with
+      | Some value -> Some value
+      | None -> Some (if text.[0] = '-' then min_int else max_int))
+  | _ -> None
+;;
+
+let index_opt table name =
+  let rec search i =
+    if i >= Array.length table
+    then None
+    else if table.(i) = name
+    then Some i
+    else search (i + 1)
+  in
+  search 0
+;;
+
+let name_of (json : Yojson.Safe.t) =
+  match json with
+  | `String name -> Some name
+  | _ -> None
+;;
+
+let unit_op_of_json_tolerant (json : Yojson.Safe.t) : Model.unit_op =
+  match json with
+  | `List (op :: rest) ->
+    if not (hashable op) then undefined json;
+    (match name_of op with
+     (* A hashable non-string op matches no branch and falls through to a no-op. *)
+     | None -> Model.Unit_pass
+     | Some op ->
+       (match op, rest with
+        | "NORTH", _ -> Model.Move Model.North
+        | "SOUTH", _ -> Model.Move Model.South
+        | "EAST", _ -> Model.Move Model.East
+        | "WEST", _ -> Model.Move Model.West
+        | "DROP", _ -> Model.Drop
+        | "WATER", _ -> Model.Water
+        | "HARVEST", _ -> Model.Harvest
+        | "FERTILIZE", _ -> Model.Fertilize
+        | "DIG", _ -> Model.Dig
+        | "BUILD_COOP", _ -> Model.Build_coop
+        | "BUILD_PASTURE", _ -> Model.Build_pasture
+        | "FEED", _ -> Model.Feed
+        | "CARE", _ -> Model.Care
+        | "COLLECT_FERTILIZER", _ -> Model.Collect_fertilizer
+        | "PLANT", crop :: _ ->
+          (* The interpreter's atomic-PLANT pre-pass hashes this argument before any
+             other guard, so an unhashable one always raises. *)
+          if not (hashable crop) then undefined json;
+          (match Option.bind (name_of crop) (index_opt product_names) with
+           | Some crop when crop < Model.crop_count -> Model.Plant_crop { crop }
+           | _ -> Model.Unit_pass (* [crop not in CROPS] *))
+        | ("PICKUP" | "PLACE"), item :: rest ->
+          if not (hashable item) then undefined json;
+          let count =
+            match rest with
+            | [] -> 1
+            | count :: _ ->
+              (match python_int count with
+               | Some count -> count
+               | None -> undefined json)
+          in
+          (* A name that is in neither the shed nor the inventory reaches a [min(n, 0)]
+             and returns without touching state. *)
+          (match Option.bind (name_of item) (index_opt shed_item_names) with
+           | None -> Model.Unit_pass
+           | Some item ->
+             if op = "PICKUP"
+             then Model.Pickup { item; count }
+             else Model.Place { item; count })
+        (* "PASS", the two ops above with [len(action) < 2], and every unrecognized op. *)
+        | _ -> Model.Unit_pass))
+  (* [not isinstance(action, list) or not action] *)
+  | _ -> Model.Unit_pass
+;;
+
+let market_order_of_json_tolerant (json : Yojson.Safe.t) : Model.market_order =
+  match json with
+  | `List (op :: rest) ->
+    (match name_of op with
+     | Some "HIRE" -> Model.Hire
+     | Some "BUY_LAND" -> Model.Buy_land
+     | Some (("BUY_SEED" | "BUY_PRODUCT" | "BUY_ANIMAL" | "SELL") as op) ->
+       (match rest with
+        (* [len(order) < 3], [int(order[2])] raising, and [n <= 0] all return None. *)
+        | item :: count :: _ ->
+          (match python_int count with
+           | Some count when count > 0 ->
+             let name = name_of item in
+             let resolve table accept =
+               match Option.bind name (index_opt table) with
+               | Some index when accept index -> Some index
+               | _ -> None
+             in
+             let fertilizer = Array.length product_names - 1 in
+             (* An item outside the op's own domain reaches the lockstep's quote phase
+                and takes its "malformed sub-op; abort" branch. *)
+             (match op with
+              | "BUY_SEED" ->
+                (match resolve product_names (fun index -> index < Model.crop_count) with
+                 | Some crop -> Model.Buy_seed { crop; count }
+                 | None -> Model.Bad_order)
+              | "BUY_ANIMAL" ->
+                (match resolve animal_names (fun _ -> true) with
+                 | Some animal -> Model.Buy_animal { animal; count }
+                 | None -> Model.Bad_order)
+              | "SELL" ->
+                (match resolve product_names (fun _ -> true) with
+                 | Some item -> Model.Sell { item; count }
+                 | None -> Model.Bad_order)
+              | _ ->
+                (match
+                   resolve product_names (fun index -> index = 0 || index = fertilizer)
+                 with
+                 | Some item -> Model.Buy_product { item; count }
+                 | None -> Model.Bad_order))
+           | _ -> Model.Bad_order)
+        | _ -> Model.Bad_order)
+     | _ -> Model.Bad_order)
+  | _ -> Model.Bad_order
+;;
+
+let player_action_of_json_tolerant (json : Yojson.Safe.t) : Model.player_action =
+  (* [s.action if isinstance(s.action, dict) else {}]: a non-object action leaves the
+     farmer on its ["PASS"] default with no hands and no orders. *)
+  let field name =
+    match json with
+    | `Assoc fields -> List.assoc_opt name fields
+    | _ -> None
+  in
+  let items name =
+    match field name with
+    | Some (`List items) -> items
+    | _ -> []
+  in
+  { Model.farmer =
+      (match field "farmer" with
+       | None -> Model.Unit_pass
+       | Some json -> unit_op_of_json_tolerant json)
+  ; hands = Array.of_list (List.map unit_op_of_json_tolerant (items "hands"))
+  ; market = Array.of_list (List.map market_order_of_json_tolerant (items "market"))
   }
 ;;
 

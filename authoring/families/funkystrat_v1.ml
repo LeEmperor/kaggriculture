@@ -23,7 +23,8 @@ module A = Kaggriculture.Actions
    — seeds, shed_units, market_price, seed_cost — resolve their item through
    parameters["crop"], so any family reading one of them must declare a parameter with
    exactly this name. *)
-let crop = Expr.Param.enum "crop" ~values:[ "WHEAT" ]
+(* forms an Expr.param type based on a skind -> string-kind *)
+let (crop : Expr.skind Expr.param) = Expr.Param.enum "crop" ~values:[ "WHEAT" ]
 
 (* Registers == PolicyState's fields, with ~init playing the dataclass default.
 
@@ -32,9 +33,23 @@ let crop = Expr.Param.enum "crop" ~values:[ "WHEAT" ]
    it is written but never read by a decision, and may diverge harmlessly. `seeds_bought`
    is Decision because stock_up's guard reads it — that is the promotion rule from
    docs/policy_dsl.md. *)
-let last_step = Expr.Reg.int "last_step" ~init:(-1) ~cls:Expr.Decision
-let turns_seen = Expr.Reg.int "turns_seen" ~init:0 ~cls:Expr.Telemetry
-let seeds_bought = Expr.Reg.bool "seeds_bought" ~init:false ~cls:Expr.Decision
+(* ikind -> integer kind, forms a register for storing model memory *)
+let (last_step : Expr.ikind Expr.reg) =
+  (Expr.Reg.int "last_step" ~init:(-1) ~cls:Expr.Decision : Expr.ikind Expr.reg)
+;;
+
+let _policy_state : Family.packed_reg list = [ R last_step ]
+
+(* this type annotation says that the last_step is equal to an expression, said expression
+   is of type Expr.iking Expr.reg explicitly, which is nice
+*)
+
+let turns_seen : Expr.ikind Expr.reg =
+  Expr.Reg.int "turns_seen" ~init:0 ~cls:Expr.Telemetry
+;;
+let (seeds_bought : Expr.bkind Expr.reg) =
+  Expr.Reg.bool "seeds_bought" ~init:false ~cls:Expr.Decision
+;;
 let w = Family.write
 
 (* ------------------------------------------------------------------ *)
@@ -44,7 +59,10 @@ let w = Family.write
 (* 1. The guard. `when_` is just an expression that evaluates to a bool, so its type is
       [Expr.bkind Expr.t] — nothing rule-specific about it. The same value would be
       equally legal as a `reset_when`, or as the condition of an `if_` inside a register
-      write. A rule does not own its guard; it just holds one. *)
+      write. A rule does not own its guard; it just holds one.
+
+   forms boolean composability over a set of conditions that it's fed or invokes
+*)
 let funky_when : Expr.bkind Expr.t =
   and_ [ obs V.shed_units >: int 0; obs V.market_price >=: int 30 ]
 ;;
@@ -62,12 +80,37 @@ let funky_when : Expr.bkind Expr.t =
    below is this same call with the head and the operand kinds already fixed, so a wrong
    arity fails at build time instead. Prefer it; this spelling is here to show what it
    expands to. *)
+
+(* sets an emit of the "SELL" op, composed of an "operand list"
+
+   Family.O -> Operand, takes in an Expr.t, and returns an operand Family.O -> Operand,
+   takes in (obvs V.shed_units)
+
+   (param crop) -> the arg passed into the operand type designates
+   (obs V.shed_units) -> an observation; obs takes in an Obs, which is very basic
+    struct that contains (2) member functions
+      "int", which takes a param "name" -> returns a record with the name passed through,
+      and the "kind" set to Int
+    V.shed_units -> Obs.int "shed_units" -> carries the name "shed_units", and the o_kind
+    hard-mapped to Int
+
+
+
+   These can be thought of as an action that is taken in response to a given state+input map
+
+  A Family.rule binds together an "emit" and a "when_", which represents a stimulus + reaction
+  whne that stimulus is true.
+*)
 let funky_emit : Family.emit =
   Family.emit "SELL" [ Family.O (param crop); Family.O (obs V.shed_units) ]
 ;;
 
 (* 3. The rule: a name, the guard, the emit. The name is not decoration — it is the handle
-   `fired_any` uses from the commit stage, and it must be unique within its group. *)
+   `fired_any` uses from the commit stage, and it must be unique within its group.
+
+
+  "when `when_` happens, output `emit`"
+*)
 let funky_rule : Family.rule =
   Family.rule ~name:"mashallah_rule" ~when_:funky_when ~emit:funky_emit
 ;;
