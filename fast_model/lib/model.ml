@@ -315,6 +315,7 @@ let pass_action = { farmer = Unit_pass; hands = [||]; market = [||] }
    episode is done. *)
 type observation =
   { obs_player : int
+  ; obs_board_size : int
   ; obs_step : int
   ; obs_day : int
   ; obs_hour : int
@@ -1159,6 +1160,7 @@ let observe state ~player =
   if player < 0 || player >= player_count then invalid_arg "player must be 0 or 1";
   { obs_player =
       player (* The framework zeroes the shared step counter once the episode is done. *)
+  ; obs_board_size = state.config.board_size
   ; obs_step = (if state.status = Done then 0 else state.transitions)
   ; obs_day = state.day
   ; obs_hour = state.hour
@@ -1180,11 +1182,19 @@ type result =
   ; result_transitions : int
   }
 
-(* The only policy the slice supports; a real policy type arrives once research needs one. *)
-let run_game config =
+type policy = observation -> player_action
+
+(* Policies see the same zero-copy observations [observe] exposes to rollout code. The
+   callback is deliberately action-only: callers that need a trace can serialize at the
+   boundary without putting JSON or trace allocation in the engine. *)
+let run_game ?(on_actions = fun ~turn:_ _ _ -> ()) config ~policy_a ~policy_b =
   let state = initial_state config in
   while state.status = Active do
-    step state pass_action pass_action
+    let turn = state.transitions in
+    let action_a = policy_a (observe state ~player:0) in
+    let action_b = policy_b (observe state ~player:1) in
+    on_actions ~turn action_a action_b;
+    step state action_a action_b
   done;
   { final_money = Array.map (fun farm -> farm.money) state.farms
   ; result_transitions = state.transitions

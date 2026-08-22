@@ -5,3 +5,7 @@
 (test
  (name interpreter_test)
  (libraries policy_dsl kag_vocabulary yojson))
+
+(test
+ (name native_vocabulary_test)
+ (libraries kag_model kag_serialize kag_vocabulary policy_dsl yojson))

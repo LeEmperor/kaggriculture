@@ -61,7 +61,10 @@ let initialization_matches_reference () =
 ;;
 
 let pass_game_matches_terminal_convention () =
-  let result = Model.run_game Model.default_config in
+  let pass_policy _ = Model.pass_action in
+  let result =
+    Model.run_game Model.default_config ~policy_a:pass_policy ~policy_b:pass_policy
+  in
   check (result.Model.result_transitions = 719) "default terminal transition count";
   check (result.Model.final_money.(0) = 3000.0) "player zero pass reward";
   check (result.Model.final_money.(1) = 3000.0) "player one pass reward"

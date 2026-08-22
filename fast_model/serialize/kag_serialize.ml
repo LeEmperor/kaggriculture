@@ -241,6 +241,57 @@ let index_of table name =
   search 0
 ;;
 
+(* Typed native actions back to the official list encoding. This is used only at the CLI
+   boundary for human-readable play traces; the engine and native policy path never
+   round-trip through JSON. *)
+let json_of_unit_op (op : Model.unit_op) : Yojson.Safe.t =
+  let bare name = `List [ `String name ] in
+  match op with
+  | Model.Unit_pass -> bare "PASS"
+  | Model.Move Model.North -> bare "NORTH"
+  | Model.Move Model.South -> bare "SOUTH"
+  | Model.Move Model.East -> bare "EAST"
+  | Model.Move Model.West -> bare "WEST"
+  | Model.Drop -> bare "DROP"
+  | Model.Pickup { item; count } ->
+    `List [ `String "PICKUP"; `String shed_item_names.(item); `Int count ]
+  | Model.Place { item; count } ->
+    `List [ `String "PLACE"; `String shed_item_names.(item); `Int count ]
+  | Model.Plant_crop { crop } -> `List [ `String "PLANT"; `String product_names.(crop) ]
+  | Model.Water -> bare "WATER"
+  | Model.Harvest -> bare "HARVEST"
+  | Model.Fertilize -> bare "FERTILIZE"
+  | Model.Dig -> bare "DIG"
+  | Model.Build_coop -> bare "BUILD_COOP"
+  | Model.Build_pasture -> bare "BUILD_PASTURE"
+  | Model.Feed -> bare "FEED"
+  | Model.Care -> bare "CARE"
+  | Model.Collect_fertilizer -> bare "COLLECT_FERTILIZER"
+;;
+
+let json_of_market_order (order : Model.market_order) : Yojson.Safe.t =
+  match order with
+  | Model.Hire -> `List [ `String "HIRE" ]
+  | Model.Buy_seed { crop; count } ->
+    `List [ `String "BUY_SEED"; `String product_names.(crop); `Int count ]
+  | Model.Buy_animal { animal; count } ->
+    `List [ `String "BUY_ANIMAL"; `String animal_names.(animal); `Int count ]
+  | Model.Sell { item; count } ->
+    `List [ `String "SELL"; `String product_names.(item); `Int count ]
+  | Model.Buy_product { item; count } ->
+    `List [ `String "BUY_PRODUCT"; `String product_names.(item); `Int count ]
+  | Model.Buy_land -> `List [ `String "BUY_LAND" ]
+  | Model.Bad_order -> `List [ `String "BAD_ORDER" ]
+;;
+
+let json_of_player_action (action : Model.player_action) : Yojson.Safe.t =
+  `Assoc
+    [ "farmer", json_of_unit_op action.farmer
+    ; "hands", `List (List.map json_of_unit_op (Array.to_list action.hands))
+    ; "market", `List (List.map json_of_market_order (Array.to_list action.market))
+    ]
+;;
+
 let unit_op_of_json (json : Yojson.Safe.t) : Model.unit_op =
   let fail () =
     failwith ("unsupported unit action in tape: " ^ Yojson.Safe.to_string json)

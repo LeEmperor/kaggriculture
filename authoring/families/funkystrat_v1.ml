@@ -38,7 +38,17 @@ let (last_step : Expr.ikind Expr.reg) =
   (Expr.Reg.int "last_step" ~init:(-1) ~cls:Expr.Decision : Expr.ikind Expr.reg)
 ;;
 
-let _state_membr : Family.packed_reg = R last_step
+let (_funky_expra : Expr.ikind Expr.reg) =
+  Expr.Reg.int "my_name" ~init:(-1) ~cls:Expr.Decision
+;;
+
+let bruh1 : string list = [ "one"; "two" ]
+
+let (_string_expa : Expr.skind Expr.reg) =
+  Expr.Reg.enum "first-arg" ~values:bruh1 ~init:"one" ~cls:Expr.Decision
+;;
+
+let _state_member : Family.packed_reg = R last_step
 let _policy_state : Family.packed_reg list = [ R last_step ]
 
 (* this type annotation says that the last_step is equal to an expression, said expression

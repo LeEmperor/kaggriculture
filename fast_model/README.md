@@ -39,8 +39,9 @@ serialize/
                     Phase 4 fuzz tapes need; normalize and a first-differing-path
                     reporter; owns every index→name conversion so the engine
                     stays JSON-free
-bin/kag_sim.ml      CLI: kag_sim.exe bench [--games N]
-                    and differential [--bundle FILE] (Phase 4 verifier)
+bin/kag_sim.ml      CLI: play (native policy episode + optional JSONL trace),
+                    evaluate (candidate/opponent/seed batch in both seats),
+                    bench [--games N], and differential [--bundle FILE]
 test/
   kag_model_test.ml               model reference facts + per-group
                                   differential replay vs the oracle + RNG and
@@ -63,6 +64,10 @@ test/
 
 ```sh
 dune build && dune test                    # includes all golden comparisons
+dune exec fast_model/bin/kag_sim.exe -- play --seed 1234 \
+  --family experiments/policies/monocrop_reorder/family.json \
+  --policy-a experiments/policies/monocrop_reorder/candidate_baseline.json \
+  --trace /tmp/kag-native.jsonl
 dune exec --profile release fast_model/bin/kag_sim.exe -- bench --games 10000
 python3 fast_model/test/record_fixture.py            # widening RNG coverage only
 python3 fast_model/test/record_model_fixture.py      # after a deliberate change
@@ -70,8 +75,14 @@ python3 fast_model/test/record_model_group<N>_fixture.py   # likewise
 python3 fast_model/test/record_python_int_fixture.py  # CPython int() over tape values
 ```
 
-The bench drives PASS tapes through the full rule set — see
-`docs/benchmark_baseline.md` for why its number is not a simulator result.
+The historical bench drives PASS tapes through the full rule set. `play` and `evaluate`
+now run a real policy workload directly against native observations/actions; Phase 5 must
+remeasure both backends on that shared workload before claiming a speedup. See
+`docs/benchmark_baseline.md` for the old number's scope.
+
+`evaluate --opponents` reads a JSON array whose entries are candidate paths or `"pass"`;
+relative candidate paths resolve beside that file. `--seeds` reads one integer seed per
+line (blank lines and `#` comments are ignored), and every matchup runs in both seats.
 
 ## How the differential fixtures work
 

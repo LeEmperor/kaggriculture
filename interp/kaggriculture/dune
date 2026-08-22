@@ -5,4 +5,4 @@
 
 (library
  (name kag_vocabulary)
- (libraries policy_dsl yojson))
+ (libraries kag_model policy_dsl yojson))
