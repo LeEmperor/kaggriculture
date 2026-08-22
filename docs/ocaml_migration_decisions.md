@@ -442,47 +442,63 @@ gate they form has now passed.
   so `--policy-a experiments.policies.monocrop_reorder.ocaml_policy` works
   through `reference/run_game.py` unchanged.
 
+- **Step 9 — `kag_sim play` / `evaluate` are built (2026-08-21).** The native
+  policy path binds the unchanged generic interpreter to
+  `Kag_model.Model.observation` through
+  `interp/kaggriculture/native_vocabulary.ml`, and its action builder emits
+  `Model.player_action` directly. No JSON enters the policy/transition turn
+  loop. `Model.run_game` now takes two policies and an optional action callback;
+  `play` writes a comparable JSONL action trace, while `evaluate` runs a
+  candidate against an opponent file over a seed file in both player seats.
+
+  Both feasibility gaps are closed at their intended boundaries:
+
+  - `Model.observation` carries `obs_board_size`, one integer added to its
+    existing zero-copy view, so row-major tile access and shed adjacency are
+    computable without reaching back into the state/configuration.
+  - The upstream product/animal/shed tables are restated in the native
+    vocabulary. The transition engine remains string- and JSON-free; the
+    serializer and policy vocabulary independently own their boundary mappings.
+
+  The native seam has evidence the JSON vectors cannot provide. An OCaml test
+  compares all fifteen native accessors against the proven JSON vocabulary on
+  empty and planted 8x8 states and compares the two action builders' external
+  shape. The end-to-end gate runs seed 1234 through
+  `reference.run_game --policy-a ...ocaml_policy` and `kag_sim play`: all 719
+  two-player action pairs agree and both finish at `[3697.0, 3000.0]`. That
+  comparison is a Python regression test, not a one-off result.
+
+- **Step 10 — Phase 5 scalar benchmarking and multicore rollouts are built
+  (2026-08-21).** `tools/benchmark_policy.py` owns one manifest-defined workload
+  and drives both the pinned Python oracle with the OCaml policy subprocess and
+  native `kag_sim evaluate`. Inputs are hashed, every seed runs in both seats,
+  setup is outside the timers, warmups and repeated alternating-order runs are
+  retained, and no speedup is calculated until result aggregates agree.
+
+  On the checked-in `monocrop-reorder-v1` baseline-versus-PASS workload (ten
+  seeds, both seats), all repetitions agreed on 20 games / 14,380 turns and
+  final-money totals. Median scalar throughput was 1,373.646 turns/s on the
+  oracle/subprocess path and 186,228.750 turns/s native: 135.573x for this exact
+  end-to-end workload, not a language ratio. The historical PASS tape remains
+  explicitly separate in [`benchmark_baseline.md`](benchmark_baseline.md).
+
+  `kag_sim evaluate --threads N` now uses a fixed pool of OCaml domains with
+  worker-local game state, policy state, and accumulators. On 1,000-game native
+  repetitions it scaled 1.575x at two workers and plateaued near 2x at four and
+  eight workers on the 4-core/8-thread host. Raw repetitions
+  live under the gitignored `experiments/results/benchmarks/`; the benchmark doc
+  records the exact artifact. `perf stat` was blocked by the host's
+  `perf_event_paranoid=4`, so no state-layout, batching, SIMD, or specialized
+  dispatch change was attempted without hardware-counter evidence.
+
 ### Next
 
-9. `kag_sim play` / `evaluate`: bind the interpreter's vocabulary to
-   `Kag_model.observe` instead of a JSON observation, and give `Model.run_game`
-   a policy instead of the PASS/PASS pair it currently hard-codes
-   (`fast_model/lib/model.ml`, `run_game`). The interpreter is already
-   parameterised over the observation type, so this is a second
-   `interp/kaggriculture/` vocabulary and an action builder emitting
-   `Model.player_action`, not a change to `policy_dsl`. The CLI dispatch in
-   `fast_model/bin/kag_sim.ml` currently knows only `bench` and `differential`.
-
-   Phase 5's benchmark numbers and every honest Python/native speedup claim wait
-   on this: until both backends run the same policy workload, `kag_sim bench` is
-   a PASS-tape measurement and nothing more.
-
-   **Two gaps to settle before writing accessors** (found 2026-08-21 while
-   checking feasibility; all fifteen accessors are otherwise reachable, and
-   `Model.is_shed_adjacent` already exists):
-
-   - `Model.observation` carries no `board_size`, but `farm.tiles` is a
-     row-major array with a `board_size` stride. Current-tile indexing and
-     `on_shed_access` are therefore uncomputable from an observation alone —
-     `kag_serialize` reaches `state.config.board_size` instead, which `observe`
-     does not pass through. The cheap fix is a field on the record: it is
-     already a zero-copy view, so one `int` costs nothing. Decide this first,
-     because every tile accessor depends on it.
-   - There is no crop or item name-to-index table in `kag_model`. The DSL's
-     `crop` parameter is the string `"WHEAT"`; the engine uses indices.
-     `product_names` and `shed_item_names` live in
-     `fast_model/serialize/kag_serialize.ml`. `kag_model` is deliberately free
-     of strings and JSON, so the mapping belongs in the vocabulary layer rather
-     than in the engine — reversing the serializer's tables or restating them.
-
-   **The gate.** The native vocabulary must agree with the JSON one, and the
-   golden vectors cannot say so: they are JSON observations, so they exercise
-   `interp/kaggriculture/vocabulary.ml` and never the native one. The honest
-   check is an end-to-end one — run the same seed through
-   `reference/run_game.py --policy-a ...ocaml_policy` and through `kag_sim
-   play`, and compare the action stream and final money. Anything weaker leaves
-   the second vocabulary unverified, which is exactly the failure mode the
-   three-backend golden gate exists to prevent.
+11. **Phase 6 — build the baseline opponent population and strategy evaluation
+    layer.** Use the trusted, benchmarked native rollout path for the baseline
+    policies and parameterized heuristic described by the game plan. Keep
+    immutable seed splits and champion-promotion rules with the evaluation
+    artifacts; do not begin CPU layout/SIMD or hardware work without reopening
+    it from profile evidence.
 
 ## Resolved questions
 

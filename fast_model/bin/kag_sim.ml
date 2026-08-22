@@ -5,6 +5,7 @@
    kag_sim.exe play --seed N --family FILE --policy-a FILE [--policy-b pass|FILE]
                     [--trace FILE]
    kag_sim.exe evaluate --family FILE --candidate FILE --opponents FILE --seeds FILE
+                        [--threads N] [--copies N]
 
    The bench drives PASS tapes through the full rule set — not a policy workload; see
    docs/benchmark_baseline.md before quoting it anywhere. [differential] is the
@@ -248,11 +249,107 @@ let read_lines path =
   List.rev !lines
 ;;
 
+type evaluation_job =
+  { opponent : policy_factory
+  ; seed : int
+  ; candidate_first : bool
+  }
+
+type evaluation_totals =
+  { mutable games : int
+  ; mutable transitions : int
+  ; mutable wins : int
+  ; mutable draws : int
+  ; mutable losses : int
+  ; mutable candidate_money : float
+  ; mutable opponent_money : float
+  }
+
+let empty_evaluation_totals () =
+  { games = 0
+  ; transitions = 0
+  ; wins = 0
+  ; draws = 0
+  ; losses = 0
+  ; candidate_money = 0.0
+  ; opponent_money = 0.0
+  }
+;;
+
+let add_evaluation_totals into from =
+  into.games <- into.games + from.games;
+  into.transitions <- into.transitions + from.transitions;
+  into.wins <- into.wins + from.wins;
+  into.draws <- into.draws + from.draws;
+  into.losses <- into.losses + from.losses;
+  into.candidate_money <- into.candidate_money +. from.candidate_money;
+  into.opponent_money <- into.opponent_money +. from.opponent_money
+;;
+
+(* A fixed number of domains consumes independent game jobs. Each worker owns its model
+   state, policy register banks, and accumulator; the atomic job index is the only mutable
+   cache line shared during evaluation. The calling domain participates in the pool, so
+   [threads] means total workers rather than spawned workers plus one. *)
+let evaluate_jobs ~threads ~candidate jobs =
+  let next_job = Atomic.make 0 in
+  let worker () =
+    let totals = empty_evaluation_totals () in
+    let rec loop () =
+      let index = Atomic.fetch_and_add next_job 1 in
+      if index < Array.length jobs
+      then (
+        let job = jobs.(index) in
+        let config = { Model.default_config with seed = job.seed } in
+        let result, candidate_value, opponent_value =
+          if job.candidate_first
+          then (
+            let result =
+              Model.run_game config ~policy_a:(candidate ()) ~policy_b:(job.opponent ())
+            in
+            result, result.final_money.(0), result.final_money.(1))
+          else (
+            let result =
+              Model.run_game config ~policy_a:(job.opponent ()) ~policy_b:(candidate ())
+            in
+            result, result.final_money.(1), result.final_money.(0))
+        in
+        totals.games <- totals.games + 1;
+        totals.transitions <- totals.transitions + result.result_transitions;
+        totals.candidate_money <- totals.candidate_money +. candidate_value;
+        totals.opponent_money <- totals.opponent_money +. opponent_value;
+        if candidate_value > opponent_value
+        then totals.wins <- totals.wins + 1
+        else if candidate_value < opponent_value
+        then totals.losses <- totals.losses + 1
+        else totals.draws <- totals.draws + 1;
+        loop ())
+    in
+    loop ();
+    totals
+  in
+  let workers = min threads (Array.length jobs) in
+  if workers <= 1
+  then worker ()
+  else (
+    (* The pool is the only domain owner in the executable, is bounded by the
+       caller, and joins every domain before returning. OxCaml's generic alert
+       points applications with mixed threading models at [Multicore]; this
+       executable uses no other threading runtime. The captured interpreter is
+       immutable and every mutable value is either atomic or worker-local. *)
+    let spawn = Domain.spawn [@alert "-do_not_spawn_domains-unsafe_multidomain"] in
+    let domains = Array.init (workers - 1) (fun _ -> spawn worker) in
+    let totals = worker () in
+    Array.iter (fun domain -> add_evaluation_totals totals (Domain.join domain)) domains;
+    totals)
+;;
+
 let evaluate argv =
   let family_path = ref ""
   and candidate_path = ref ""
   and opponents_path = ref ""
-  and seeds_path = ref "" in
+  and seeds_path = ref ""
+  and threads = ref 1
+  and copies = ref 1 in
   let i = ref 2 in
   while !i < Array.length argv do
     let value option assign =
@@ -267,6 +364,16 @@ let evaluate argv =
      | "--candidate" -> value "--candidate" (fun path -> candidate_path := path)
      | "--opponents" -> value "--opponents" (fun path -> opponents_path := path)
      | "--seeds" -> value "--seeds" (fun path -> seeds_path := path)
+     | "--threads" ->
+       value "--threads" (fun raw ->
+         match int_of_string_opt raw with
+         | Some value when value > 0 -> threads := value
+         | _ -> failwith "--threads expects a positive integer")
+     | "--copies" ->
+       value "--copies" (fun raw ->
+         match int_of_string_opt raw with
+         | Some value when value > 0 -> copies := value
+         | _ -> failwith "--copies expects a positive integer")
      | arg -> failwith ("unknown argument: " ^ arg));
     incr i
   done;
@@ -305,39 +412,35 @@ let evaluate argv =
       (read_lines !seeds_path)
   in
   if seeds = [] then failwith "seeds must not be empty";
-  let games = ref 0
-  and wins = ref 0
-  and draws = ref 0
-  and losses = ref 0
-  and candidate_money = ref 0.0
-  and opponent_money = ref 0.0 in
-  let record candidate_value opponent_value =
-    incr games;
-    candidate_money := !candidate_money +. candidate_value;
-    opponent_money := !opponent_money +. opponent_value;
-    if candidate_value > opponent_value
-    then incr wins
-    else if candidate_value < opponent_value
-    then incr losses
-    else incr draws
+  let jobs =
+    Array.of_list
+      (List.concat_map
+         (fun _ ->
+           List.concat_map
+             (fun opponent_spec ->
+               let opponent = factory_of_spec family opponent_spec in
+               List.concat_map
+                 (fun seed ->
+                   [ { opponent; seed; candidate_first = true }
+                   ; { opponent; seed; candidate_first = false }
+                   ])
+                 seeds)
+             opponent_specs)
+         (List.init !copies Fun.id))
   in
-  List.iter
-    (fun opponent_spec ->
-      let opponent = factory_of_spec family opponent_spec in
-      List.iter
-        (fun seed ->
-          let config = { Model.default_config with seed } in
-          let as_a =
-            Model.run_game config ~policy_a:(candidate ()) ~policy_b:(opponent ())
-          in
-          record as_a.final_money.(0) as_a.final_money.(1);
-          let as_b =
-            Model.run_game config ~policy_a:(opponent ()) ~policy_b:(candidate ())
-          in
-          record as_b.final_money.(1) as_b.final_money.(0))
-        seeds)
-    opponent_specs;
-  let games_float = float_of_int !games in
+  let cpu_started = Unix.times () in
+  let started = Unix.gettimeofday () in
+  let totals = evaluate_jobs ~threads:!threads ~candidate jobs in
+  let seconds = Unix.gettimeofday () -. started in
+  let cpu_finished = Unix.times () in
+  let cpu_seconds =
+    cpu_finished.tms_utime
+    +. cpu_finished.tms_stime
+    -. cpu_started.tms_utime
+    -. cpu_started.tms_stime
+  in
+  let games_float = float_of_int totals.games
+  and transitions_float = float_of_int totals.transitions in
   print_endline
     (Yojson.Safe.to_string
        (`Assoc
@@ -345,13 +448,26 @@ let evaluate argv =
          ; "candidate", `String !candidate_path
          ; "opponents", `Int (List.length opponent_specs)
          ; "seeds", `Int (List.length seeds)
-         ; "games", `Int !games
-         ; "wins", `Int !wins
-         ; "draws", `Int !draws
-         ; "losses", `Int !losses
-         ; "mean_candidate_money", `Float (!candidate_money /. games_float)
-         ; "mean_opponent_money", `Float (!opponent_money /. games_float)
-         ; "mean_margin", `Float ((!candidate_money -. !opponent_money) /. games_float)
+         ; "workload_copies", `Int !copies
+         ; "threads", `Int (min !threads (Array.length jobs))
+         ; "requested_threads", `Int !threads
+         ; "games", `Int totals.games
+         ; "turns", `Int totals.transitions
+         ; "wins", `Int totals.wins
+         ; "draws", `Int totals.draws
+         ; "losses", `Int totals.losses
+         ; "candidate_money_total", `Float totals.candidate_money
+         ; "opponent_money_total", `Float totals.opponent_money
+         ; "mean_candidate_money", `Float (totals.candidate_money /. games_float)
+         ; "mean_opponent_money", `Float (totals.opponent_money /. games_float)
+         ; ( "mean_margin"
+           , `Float ((totals.candidate_money -. totals.opponent_money) /. games_float) )
+         ; "wall_seconds", `Float seconds
+         ; "cpu_seconds", `Float cpu_seconds
+         ; "cpu_utilization_percent", `Float (cpu_seconds /. seconds *. 100.0)
+         ; "games_per_second", `Float (games_float /. seconds)
+         ; "turns_per_second", `Float (transitions_float /. seconds)
+         ; "nanoseconds_per_turn", `Float (seconds *. 1.0e9 /. transitions_float)
          ]))
 ;;
 
@@ -572,7 +688,8 @@ let () =
         "usage: %s bench [--games N]\n\
         \       %s play --seed N --family FILE --policy-a FILE [--policy-b pass|FILE] \
          [--trace FILE]\n\
-        \       %s evaluate --family FILE --candidate FILE --opponents FILE --seeds FILE\n\
+        \       %s evaluate --family FILE --candidate FILE --opponents FILE --seeds FILE \
+         [--threads N] [--copies N]\n\
         \       %s differential [--bundle FILE]\n"
         Sys.argv.(0)
         Sys.argv.(0)

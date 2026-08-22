@@ -14,6 +14,7 @@ import random
 import sys
 import types
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,15 @@ SPEC_PATH = ENV_DIR / "kaggriculture.json"
 
 Action = dict[str, Any]
 Policy = Callable[[dict[str, Any]], Action]
+
+
+@dataclass(frozen=True)
+class GameResult:
+    """Compact terminal result for throughput evaluation without trace materialization."""
+
+    final_money: tuple[float, float]
+    status: tuple[str, str]
+    turns: int
 
 
 class Struct(dict[str, Any]):
@@ -180,14 +190,14 @@ def diagnostic_state(state: list[Struct], env: OracleEnvironment) -> dict[str, A
     }
 
 
-def run_game(
+def _drive_game(
     seed: int,
     policy_a: Policy,
     policy_b: Policy,
     *,
     configuration: Mapping[str, Any] | None = None,
-    trace_path: Path | None = None,
-) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] | None = None,
+) -> GameResult:
     interpreter_module = load_interpreter()
     options = dict(configuration or {})
     options["seed"] = seed
@@ -199,9 +209,12 @@ def run_game(
     env.state = state
     state[0].observation.step = 0
 
-    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    lock = (
+        json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+        if records is not None
+        else None
+    )
     policies = (policy_a, policy_b)
-    records: list[dict[str, Any]] = []
     turn = 0
     while not env.done:
         actions = [
@@ -217,22 +230,70 @@ def run_game(
         # the interpreter returns, and is reset to zero once the episode is done.
         state[0].observation.step = 0 if env.done else turn + 1
 
-        records.append(
-            {
-                "reference_commit": lock["commit"],
-                "seed": seed,
-                "turn": turn,
-                "actions": plain(actions),
-                "observations": [
-                    player_observation(state, 0),
-                    player_observation(state, 1),
-                ],
-                "diagnostic_state": diagnostic_state(state, env),
-                "status": [agent.status for agent in state],
-                "reward": [agent.reward for agent in state],
-            }
-        )
+        if records is not None:
+            assert lock is not None
+            records.append(
+                {
+                    "reference_commit": lock["commit"],
+                    "seed": seed,
+                    "turn": turn,
+                    "actions": plain(actions),
+                    "observations": [
+                        player_observation(state, 0),
+                        player_observation(state, 1),
+                    ],
+                    "diagnostic_state": diagnostic_state(state, env),
+                    "status": [agent.status for agent in state],
+                    "reward": [agent.reward for agent in state],
+                }
+            )
         turn += 1
+
+    return GameResult(
+        final_money=(float(state[0].reward), float(state[1].reward)),
+        status=(str(state[0].status), str(state[1].status)),
+        turns=turn,
+    )
+
+
+def evaluate_game(
+    seed: int,
+    policy_a: Policy,
+    policy_b: Policy,
+    *,
+    configuration: Mapping[str, Any] | None = None,
+) -> GameResult:
+    """Run one official game while retaining only its terminal aggregate.
+
+    This is the oracle side of the Phase 5 throughput benchmark. It deliberately
+    avoids constructing diagnostic states and post-turn observations, work that a
+    native ``evaluate`` run does not perform either.
+    """
+
+    return _drive_game(
+        seed,
+        policy_a,
+        policy_b,
+        configuration=configuration,
+    )
+
+
+def run_game(
+    seed: int,
+    policy_a: Policy,
+    policy_b: Policy,
+    *,
+    configuration: Mapping[str, Any] | None = None,
+    trace_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    _drive_game(
+        seed,
+        policy_a,
+        policy_b,
+        configuration=configuration,
+        records=records,
+    )
 
     if trace_path is not None:
         trace_path.parent.mkdir(parents=True, exist_ok=True)

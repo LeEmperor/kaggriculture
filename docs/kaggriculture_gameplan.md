@@ -4,12 +4,14 @@
 
 This document is the source of truth for implementing the Kaggriculture research platform and final competition agent.
 
-Current status: **Phases 0–4 complete. The native simulator is trusted: the
+Current status: **Phases 0–5 complete. The native simulator is trusted: the
 Phase 4 trust gate below passed on 2026-08-21 — 1,000 full 720-turn seeded games
 (719,000 turns) plus 300 non-default-configuration games, per-turn differential
 comparison against the pinned oracle, scripted and fuzz tapes, zero divergences,
-repeated clean on a second master seed.** Phase 5 (benchmark and multicore
-rollouts) is next.
+repeated clean on a second master seed. The Phase 5 same-policy workload measured
+135.573x scalar native speedup and a fixed worker pool plateaued near 2x at four
+to eight workers on the 4-core host.** Phase 6 (strategy platform and baseline opponent
+population) is next.
 
 The primary objective is to build the strongest practical Kaggle agent. Hardware acceleration is a secondary research path and must be justified by measurements. The first major deliverable is a trusted native simulator, not an FPGA demonstration or an early submission bot.
 
@@ -318,14 +320,23 @@ Aggregate win-rate similarity is not a substitute for this gate.
 
 ## Phase 5 — Benchmark and Multicore Rollouts
 
+**Completed 2026-08-21.** The reproducible policy workload, raw repetitions,
+same-workload scalar comparison, fixed OCaml worker pool, and 1/2/4/8-worker
+scaling result are recorded in [`benchmark_baseline.md`](benchmark_baseline.md).
+The 135.573x result is scoped to the exact oracle/subprocess-versus-native
+workload recorded there. Hardware-counter profiling was blocked by host policy;
+therefore none of the deferred state-layout, batching, SIMD, or specialized
+dispatch changes below was started.
+
 ### Commands
 
 Target a stable CLI along these lines:
 
 ```bash
 kag-sim play --seed 123 --policy-a a.json --policy-b b.json
-kag-sim bench --games 100000 --threads 16
-kag-sim evaluate --candidate a.json --opponents opponents.json --seeds seeds.txt
+kag-sim bench --games 100000
+kag-sim evaluate --family family.json --candidate a.json \
+  --opponents opponents.json --seeds seeds.txt --threads 16 --copies 50
 kag-test differential --seeds seeds.txt
 ```
 

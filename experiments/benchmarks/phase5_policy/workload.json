@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "phase5-monocrop-reorder-v1-vs-pass-10-seeds",
+  "family": "../../policies/monocrop_reorder/family.json",
+  "candidate": "../../policies/monocrop_reorder/candidate_baseline.json",
+  "opponents": "opponents.json",
+  "seeds": "seeds.txt"
+}

@@ -1,65 +1,145 @@
-# Native Benchmark Baseline
+# Policy Workload Benchmark
 
-Date: 2026-08-21 (supersedes the 2026-08-20 C++ baseline, kept below for the
-record; the C++ backend was removed when the game plan's native-language
-decision changed to OCaml — see
-[`ocaml_migration_decisions.md`](ocaml_migration_decisions.md)).
+Date: 2026-08-21. This is the Phase 5 same-workload result. The historical PASS
+tape measurements are retained separately at the end of this document and are
+not Python/native comparisons.
 
-This is a tooling baseline for the first native slice, not a performance result
-for the complete Kaggriculture simulator. The measured transition currently
-validates PASS, increments day/hour, and applies the terminal convention. It
-does not yet process the town, market, crops, animals, inventory, or
-randomness. The number will fall sharply as real rules are added. Python/native
-speedup must not be reported until both backends execute the same full
-transition workload and match differentially.
+## Result
+
+The official Python oracle plus the OCaml policy subprocess and native
+`kag_sim evaluate` ran the same `monocrop-reorder-v1` family and baseline
+candidate against PASS, on seeds 0–9, in both player seats. Every repetition
+matched on 20 games, 14,380 turns, a 20/0/0 record, candidate-money total
+73,834, and opponent-money total 60,000.
+
+One warmup and five retained repetitions were run in alternating forward/reverse
+backend order. The table reports medians; family/candidate loading and policy
+subprocess startup were outside both timers.
+
+| Backend | Wall time | Games/s | Turns/s | ns/turn |
+| --- | ---: | ---: | ---: | ---: |
+| Official Python oracle + OCaml policy subprocess | 10.468488 s | 1.910 | 1,373.646 | 727,989.430 |
+| Native OCaml, 1 worker | 0.077217 s | 259.011 | 186,228.750 | 5,369.740 |
+
+For this exact workload on this host, native scalar evaluation is **135.573x**
+faster by median wall time. This is an end-to-end backend result, not a generic
+Python-versus-OCaml language ratio: the Python path performs the official
+environment's observation construction/copying and one JSON line-protocol
+round trip per policy turn, while native evaluation uses zero-copy model
+observations and typed actions. It is also not the submission-policy latency
+measurement, which has a different scope.
+
+## Reproducible workload and harness
+
+The manifest is
+[`experiments/benchmarks/phase5_policy/workload.json`](../experiments/benchmarks/phase5_policy/workload.json).
+It points to the one shared family and candidate plus the checked-in opponent
+and seed files. `tools.benchmark_policy` resolves those inputs once, hashes all
+four, sends the same expanded job set to both backends, and refuses to emit a
+speedup if aggregate results differ.
+
+The Python side uses `reference.oracle.evaluate_game`, which executes the same
+pinned upstream interpreter as `run_game` but retains only terminal aggregates.
+It intentionally omits trace serialization and post-turn diagnostic copies,
+because native `evaluate` does not perform those operations. The policy itself
+still runs through `kag_policy.exe` over the documented subprocess protocol.
+
+```bash
+dune build --profile release
+python3 -m tools.benchmark_policy run \
+  --warmups 1 --repetitions 5 --threads 1 2 4 8 --scaling-copies 50
+```
+
+The final raw artifact, including every repetition, input and executable hashes,
+host/build metadata, correctness signatures, and summaries, is retained at:
+
+```text
+experiments/results/benchmarks/
+  phase5-monocrop-reorder-v1-vs-pass-10-seeds-20260822T040700.json
+```
+
+`experiments/results/` is deliberately gitignored. The artifact validates
+against `experiments/experiment.schema.json`; reruns create a new timestamped
+artifact rather than overwriting it.
+
+## Fixed worker pool and scaling
+
+`kag_sim evaluate --threads N` uses a fixed pool of `N` total OCaml domains,
+including the calling domain. Games are independent jobs obtained through one
+atomic index. Model state, policy register banks, and result accumulators are
+worker-local; only the job index is mutated across workers, and results are
+reduced after all domains join.
+
+The 20-game comparison batch is too short for a scaling curve, so each retained
+native scaling repetition executes 50 copies of that exact batch: 1,000 games
+and 719,000 turns. These longer 1/2/4/8-worker runs use the same family,
+candidate, opponent, seeds, and positions. Their aggregate correctness
+signature is exactly 50 times the scalar signature.
+
+| Workers | Median wall | Games/s | Turns/s | ns/turn | Speedup | Efficiency |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 3.820052 s | 261.777 | 188,217.338 | 5,313.007 | 1.000x | 100.0% |
+| 2 | 2.425813 s | 412.233 | 296,395.481 | 3,373.871 | 1.575x | 78.7% |
+| 4 | 1.916116 s | 521.889 | 375,238.243 | 2,664.974 | 1.994x | 49.8% |
+| 8 | 1.865237 s | 536.125 | 385,473.804 | 2,594.210 | 2.048x | 25.6% |
+
+Median process CPU utilization was approximately 99%, 200%, 397%, and 604%
+respectively. Scaling plateaus around 2x: eight logical workers improve the
+median only 2.7% over four on this 4-core/8-thread i7-1165G7, while individual
+4- and 8-worker times overlap broadly. The raw scalar and scaling samples vary
+by roughly 25% as the laptop changes frequency/thermal state, so the small
+4-to-8 median difference is not a defensible SMT gain. The result does not yet
+identify whether the plateau is GC, cache, memory bandwidth, scheduling, or
+thermal behavior.
+
+Hardware counters were requested with `perf stat`, but this host has
+`perf_event_paranoid=4`, so the kernel refused all supported events without
+elevated privileges. No privilege change was made. State-layout, batching,
+SIMD, and specialized-dispatch work remain deferred until a counter-capable
+profile is available.
 
 ## Build and host
 
 ```text
-Backend:  ocaml-scalar-pass-scaffold
-Compiler: OCaml 5.2.0+ox (OxCaml), flambda per the switch default
+Python:   CPython 3.12
+OCaml:    5.2.0+ox (OxCaml)
 Build:    dune --profile release
 Host:     Intel Core i7-1165G7, 4 cores / 8 threads
 OS:       Linux 7.0.0-28-generic x86_64
-Threads:  1
 ```
 
-## Command
+## Historical PASS-tape measurements — not comparable
 
-```bash
-dune exec --profile release fast_model/bin/kag_sim.exe -- bench --games 100000
-```
+The `kag_sim bench` command drives PASS actions rather than a policy workload.
+It is retained as a microbenchmark/tooling record only and must not be compared
+with the policy table above.
 
-## Result
+The first OCaml scaffold (2026-08-21) only validated PASS, incremented the
+clock, and applied the terminal convention:
 
 ```text
+backend=ocaml-scalar-pass-scaffold
 games=100000
 transitions=71900000
 seconds=0.411
 games_per_second=243544.789
 transitions_per_second=175108703.221
 nanoseconds_per_transition=5.711
+checksum=300000000.000
 ```
 
-The checksum was `300000000.000`. It prevents the outer game loop from being
-discarded. The ~2.6x gap to the retired C++ number is a scaffold artifact, not
-a language result: at this size the loop measures little beyond call and
-increment overhead, and no optimization work has been done. Judge the language
-choice at Phase 4, on the full transition workload.
+After all Phase 3 rules landed, the same PASS-tape command ran the complete
+transition rule set and measured about 1.3 us/transition (about 1,100 full
+games/s). This still omitted the policy workload and was never a head-to-head
+result.
 
-Update (2026-08-21, all Phase 3 rule groups landed): the bench still drives
-PASS tapes, but every transition now runs the complete rule set — market
-refresh, town demand, decay, end-of-day RNG — so the same command measures
-~1.3 µs/transition (~1,100 full games/second single-threaded, before any
-optimization work). Exactly as predicted above, the number moved with scope.
-A meaningful Python/native comparison and any layout optimization wait for
-the Phase 4 gate, per the game plan.
-
-## Historical: C++ scaffold (2026-08-20, backend removed)
+The removed C++ scaffold from 2026-08-20 was narrower still:
 
 ```text
-Backend:  cpp-scalar-pass-scaffold
-Compiler: GCC 13.3.0 (CMake Release, -O3 -DNDEBUG)
-games=100000  transitions=71900000  seconds=0.157
+backend=cpp-scalar-pass-scaffold
+compiler=GCC 13.3.0 (-O3 -DNDEBUG)
+games=100000
+transitions=71900000
+seconds=0.157
 nanoseconds_per_transition=2.183
 ```

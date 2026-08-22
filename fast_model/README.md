@@ -68,17 +68,21 @@ dune exec fast_model/bin/kag_sim.exe -- play --seed 1234 \
   --family experiments/policies/monocrop_reorder/family.json \
   --policy-a experiments/policies/monocrop_reorder/candidate_baseline.json \
   --trace /tmp/kag-native.jsonl
-dune exec --profile release fast_model/bin/kag_sim.exe -- bench --games 10000
+dune build --profile release
+python3 -m tools.benchmark_policy run             # same-policy + worker scaling
+dune exec --profile release fast_model/bin/kag_sim.exe -- bench --games 10000  # historical PASS tape
 python3 fast_model/test/record_fixture.py            # widening RNG coverage only
 python3 fast_model/test/record_model_fixture.py      # after a deliberate change
 python3 fast_model/test/record_model_group<N>_fixture.py   # likewise
 python3 fast_model/test/record_python_int_fixture.py  # CPython int() over tape values
 ```
 
-The historical bench drives PASS tapes through the full rule set. `play` and `evaluate`
-now run a real policy workload directly against native observations/actions; Phase 5 must
-remeasure both backends on that shared workload before claiming a speedup. See
-`docs/benchmark_baseline.md` for the old number's scope.
+The historical bench drives PASS tapes through the full rule set. The Phase 5
+same-policy benchmark is complete: the harness verifies identical aggregates before
+reporting the scoped Python-oracle/subprocess versus native result and retains raw
+repetitions. `evaluate --threads N` uses the fixed OCaml worker pool; `--copies N`
+repeats the exact job set to make short native scaling runs measurable. See
+`docs/benchmark_baseline.md` for the result and the old number's separate scope.
 
 `evaluate --opponents` reads a JSON array whose entries are candidate paths or `"pass"`;
 relative candidate paths resolve beside that file. `--seeds` reads one integer seed per

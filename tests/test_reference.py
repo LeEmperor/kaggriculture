@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from reference.oracle import run_game
+from reference.oracle import evaluate_game, run_game
 from reference.policies.pass_policy import agent as pass_agent
 
 
@@ -19,6 +19,20 @@ class ReferenceOracleTest(unittest.TestCase):
         self.assertEqual(len(first), 3)
         self.assertEqual(first[-1]["status"], ["DONE", "DONE"])
         self.assertEqual(first[-1]["reward"], [3000.0, 3000.0])
+
+    def test_compact_evaluation_matches_traced_terminal_result(self) -> None:
+        configuration = {"episodeSteps": 4, "turnsPerDay": 24, "weedSpawnChance": 0}
+        records = run_game(1234, pass_agent, pass_agent, configuration=configuration)
+        compact = evaluate_game(
+            1234,
+            pass_agent,
+            pass_agent,
+            configuration=configuration,
+        )
+
+        self.assertEqual(compact.turns, len(records))
+        self.assertEqual(compact.status, tuple(records[-1]["status"]))
+        self.assertEqual(compact.final_money, tuple(records[-1]["reward"]))
 
     def test_policy_cannot_see_opponent_private_state(self) -> None:
         seen: list[dict[str, Any]] = []

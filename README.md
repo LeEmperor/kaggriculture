@@ -5,7 +5,7 @@ environments:
 
 - the pinned official Python environment is the behavioral oracle and the final
   submission target;
-- a C++20 simulator is used only for fast, local strategy evaluation after it
+- an OCaml simulator is used only for fast, local strategy evaluation after it
   matches the oracle turn-for-turn.
 
 The implementation roadmap and correctness gates live in
@@ -26,8 +26,9 @@ dune test
 # Python tests.
 python3 -m unittest discover -s tests -p 'test_*.py'
 
-# Run the optimized baseline benchmark.
-dune exec --profile release fast_model/bin/kag_sim.exe -- bench --games 100000
+# Run the optimized same-policy benchmark and fixed-worker scaling suite.
+dune build --profile release
+python3 -m tools.benchmark_policy run
 ```
 
 Generated upstream sources, builds, virtual environments, traces, and experiment
@@ -35,9 +36,11 @@ results are ignored. The pin itself is recorded in
 [`reference/upstream.lock.json`](reference/upstream.lock.json), and experiment
 metadata follows [`experiments/experiment.schema.json`](experiments/experiment.schema.json).
 
-The benchmark drives PASS tapes through the full rule set. That is a tooling
-baseline, not a head-to-head result: no Python/native speedup is quotable until
-both backends run the same policy workload, which waits on `kag_sim play`.
+The Phase 5 benchmark drives an identical manifest-defined policy workload on
+the official Python/oracle-subprocess and native paths, verifies matching result
+aggregates, retains every raw repetition, and then measures the fixed OCaml
+worker pool. Historical PASS-tape numbers remain separately labeled in
+[`docs/benchmark_baseline.md`](docs/benchmark_baseline.md).
 
 ## Policy portability
 

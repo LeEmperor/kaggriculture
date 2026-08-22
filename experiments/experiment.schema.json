@@ -21,7 +21,16 @@
   "properties": {
     "project_commit": { "type": "string" },
     "upstream_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-    "simulator": { "enum": ["official-python", "cpp-scalar", "cpp-statistical"] },
+    "simulator": {
+      "enum": [
+        "official-python",
+        "ocaml-scalar",
+        "ocaml-multicore",
+        "policy-backend-comparison",
+        "cpp-scalar",
+        "cpp-statistical"
+      ]
+    },
     "build": {
       "type": "object",
       "required": ["compiler", "flags"],
@@ -55,4 +64,3 @@
     }
   }
 }
-

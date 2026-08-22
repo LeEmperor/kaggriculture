@@ -106,6 +106,10 @@ class NativePlayTest(unittest.TestCase):
                     str(opponents),
                     "--seeds",
                     str(seeds),
+                    "--threads",
+                    "2",
+                    "--copies",
+                    "2",
                 ],
                 cwd=ROOT,
                 check=True,
@@ -113,8 +117,18 @@ class NativePlayTest(unittest.TestCase):
                 text=True,
             )
             report = json.loads(completed.stdout)
-            self.assertEqual(report["games"], 2)
-            self.assertEqual(report["wins"] + report["draws"] + report["losses"], 2)
+            self.assertEqual(report["games"], 4)
+            self.assertEqual(report["turns"], 2876)
+            self.assertEqual(report["threads"], 2)
+            self.assertEqual(report["workload_copies"], 2)
+            self.assertEqual(report["wins"] + report["draws"] + report["losses"], 4)
+            for metric in (
+                "wall_seconds",
+                "games_per_second",
+                "turns_per_second",
+                "nanoseconds_per_turn",
+            ):
+                self.assertGreater(report[metric], 0)
 
 
 if __name__ == "__main__":
