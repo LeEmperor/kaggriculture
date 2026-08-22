@@ -534,7 +534,7 @@ gate they form has now passed.
     MOVE and 93.2% PASS and ranks seventh of nine, because the vocabulary cannot
     name a tile it is not standing on. No parameter search fixes that.
 
-    The levels and their measured prices are in
+    The levels, what each costs to build, and what each is worth are in
     [`dsl_seam_extension.md`](dsl_seam_extension.md). The short form: Level A —
     new accessors and emits in the seam files, no change to `policy_dsl` — takes
     a policy from 0.319 to 0.757, because `premium-crop` turns out to *be* a
@@ -543,7 +543,7 @@ gate they form has now passed.
     worth 1.6% of bankroll: `animal-solo`, the livestock engine with its crew
     removed and all feed bought at market price, wins 44.7% of its games against
     `animal-focused` and finishes $307 behind it on average. Tier 2, tile
-    addressing, is unpriced and is the real open question.
+    addressing, has not been measured and is the real open question.
 
     That document also records the tradeoff Level A forces and Decision 5 pays
     for: a fat accessor puts the task ranking in `submission/vocabulary.py`,

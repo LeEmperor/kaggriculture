@@ -26,7 +26,7 @@ name any tile but the one underfoot, so no candidate search inside that seam can
 the strategies above it. **Widening the seam is the critical path to a competitive
 submission, and parameter search is behind it, not in front of it.**
 
-## Why widening is expensive
+## What widening costs to build
 
 An accessor is not one edit. The DSL has three backends that must agree, and adding one
 observation costs an entry in each of four seam files:
@@ -45,6 +45,19 @@ already says adding an accessor is the expensive change and adding a rule is fre
 document is about which accessors are worth that price.
 
 ## The three levels
+
+A **level** is a category of *extension to the DSL itself* — how much of the system has to
+change before a shippable policy can do a given thing. Levels are not a runtime concept
+and have nothing to do with policies, families, or candidates; nothing in the codebase is
+"at" a level. They exist only to sort the work.
+
+Each level is described on two independent axes, and confusing them is easy:
+
+- **cost** — engineering effort: which files change, and whether the generic library is
+  among them.
+- **worth** — what it buys in game outcome, measured in the league.
+
+The finding of this document is that the two run *opposite* to each other here.
 
 (Called *levels*, not tiers: [`ocaml_migration_decisions.md`](ocaml_migration_decisions.md)
 Decision 3 already uses "Tier 1/2/3" for how a family ships — data-defined,
@@ -80,7 +93,7 @@ hand, inside the *generic* library — which means `submission/dsl/` and
 `interp/lib/` and `authoring/lib/family.ml` and the load-time validation in both
 `Family.load`s, on top of the seam files. This is the expensive one by a wide margin.
 
-## What the league already priced
+## What the league already measured
 
 Two of the three levels turned out to be already measured, because the baseline population
 happens to contain policies that sit exactly on those boundaries. This was not designed
@@ -122,7 +135,7 @@ it is counter-intuitive: hiring is nearly free in this game, so one would expect
 workers to dominate. They do not. `expansion` shows extra workers mostly buy extra
 walking, and `animal-solo` shows one worker can run a full livestock operation alone.
 
-### Level B is not priced, and is the real open question
+### Level B's worth is not measured, and is the real open question
 
 No existing baseline sits on the Level-B boundary, because every native baseline can
 address tiles freely — that is the one capability the natives have that a Level-A DSL
@@ -166,7 +179,7 @@ it working across every backend, so the choice should be deliberate.
 3. **Then Level B** (tile addressing), justified by whichever of two things the search shows: candidates
    that want per-tile logic the fat accessor cannot express, or the redeployment cost of
    the frozen ranking becoming real.
-4. **Level C last, if ever.** Priced at 1.6% of bankroll for the largest engineering cost
+4. **Level C last, if ever.** Worth 1.6% of bankroll for the largest engineering cost
    on the list — a third cascade inside `policy_dsl`, in both interpreters, plus both
    `Family.load` validations. Revisit only if a searched candidate is demonstrably
    bottlenecked on worker-hours rather than on decisions.
@@ -176,7 +189,7 @@ reopened by any of this.
 
 ## The probe protocol, for reuse
 
-The method that priced Levels A and C generalizes and is cheap, so it should be the
+The method that measured Levels A and C generalizes and is cheap, so it should be the
 default before paying for a seam extension:
 
 > Write a native baseline in `baselines/` that is deliberately handicapped to exactly the
