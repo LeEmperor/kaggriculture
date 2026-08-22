@@ -6,6 +6,7 @@
 let families =
   [ ("monocrop_reorder", fun () -> Families.Monocrop_reorder.family)
   ; ("funkystrat_v1", fun () -> Families.Funkystrat_v1.family)
+  ; ("monocrop_field_v1", fun () -> Families.Monocrop_field_v1.family)
   ]
 ;;
 

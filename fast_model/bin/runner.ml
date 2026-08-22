@@ -258,7 +258,8 @@ let evaluate argv =
     then Evaluation.baseline_entrant !baseline
     else (
       match ambient_family with
-      | Some family_path -> Evaluation.dsl_entrant ~family_path ~candidate_path:!candidate
+      | Some family_path ->
+        Evaluation.dsl_entrant ~family_path ~candidate_path:!candidate ()
       | None -> failwith "--candidate requires --family")
   in
   let opponents = Array.of_list (Evaluation.of_file ~ambient_family !opponents_path) in
@@ -289,12 +290,31 @@ let evaluate argv =
   let cpu_started = Unix.times () in
   let started = Unix.gettimeofday () in
   run_jobs ~threads:!threads ~entrants ~jobs ~outcomes ~coverage;
-  let games =
+  let all_games =
     games_for ~jobs ~outcomes ~entrant:0 ~opponent_of:(fun entrant -> entrant - 1)
+  in
+  (* [--copies] repeats an identical, deterministic workload; it exists to give the
+     throughput benchmark enough work to fill a worker pool, and the Phase 5 correctness
+     check requires the flat totals below to scale linearly with it. The statistics must
+     not: a confidence interval computed over fifty copies of the same twenty games would
+     report a twentieth of the true width. So the flat block counts every copy and every
+     summary is computed over one. *)
+  let games =
+    if !copies <= 1
+    then all_games
+    else (
+      let per_copy = List.length all_games / !copies in
+      List.filteri (fun index _ -> index < per_copy) all_games)
+  in
+  let total_transitions =
+    List.fold_left
+      (fun acc (g : Evaluation.game) -> acc + g.transitions)
+      0
+      all_games
   in
   let config = Model.default_config in
   let overall = Evaluation.summarize ~config games in
-  let seconds, _cpu, timing_json = timing ~started ~cpu_started ~transitions:overall.transitions in
+  let seconds, _cpu, timing_json = timing ~started ~cpu_started ~transitions:total_transitions in
   let per_opponent =
     List.init (Array.length opponents) (fun index ->
       let subset = List.filter (fun (g : Evaluation.game) -> g.opponent = index) games in
@@ -319,11 +339,12 @@ let evaluate argv =
   let coverage_total = merge_coverage ~jobs ~coverage ~entrant:0 in
   let missing, coverage_json = coverage_report ~entrant:measured coverage_total in
   let candidate_total =
-    List.fold_left (fun acc (g : Evaluation.game) -> acc +. g.money) 0.0 games
+    List.fold_left (fun acc (g : Evaluation.game) -> acc +. g.money) 0.0 all_games
   and opponent_total =
-    List.fold_left (fun acc (g : Evaluation.game) -> acc +. g.opponent_money) 0.0 games
+    List.fold_left (fun acc (g : Evaluation.game) -> acc +. g.opponent_money) 0.0 all_games
   in
-  let games_float = float_of_int overall.games in
+  let total_games = List.length all_games in
+  let games_float = float_of_int total_games in
   let summary_json : Yojson.Safe.t =
     `Assoc
       ([ "backend", `String "ocaml-native"
@@ -343,11 +364,12 @@ let evaluate argv =
          (* The flat block below is the Phase 5 benchmark's correctness contract
             (tools/benchmark_policy.py CORRECTNESS_FIELDS and METRIC_FIELDS); it must
             keep its names and meanings. Everything richer is additive. *)
-       ; "games", `Int overall.games
-       ; "turns", `Int overall.transitions
-       ; "wins", `Int overall.wins
-       ; "draws", `Int overall.draws
-       ; "losses", `Int overall.losses
+       ; "games", `Int total_games
+       ; "turns", `Int total_transitions
+       ; "wins", `Int (overall.wins * !copies)
+       ; "draws", `Int (overall.draws * !copies)
+       ; "losses", `Int (overall.losses * !copies)
+       ; "statistics_over_games", `Int overall.games
        ; "candidate_money_total", `Float candidate_total
        ; "opponent_money_total", `Float opponent_total
        ; "mean_candidate_money", `Float (candidate_total /. games_float)
@@ -355,7 +377,7 @@ let evaluate argv =
        ; "mean_margin", `Float ((candidate_total -. opponent_total) /. games_float)
        ; "games_per_second", `Float (games_float /. seconds)
        ; "nanoseconds_per_turn"
-       , `Float (seconds *. 1.0e9 /. float_of_int overall.transitions)
+       , `Float (seconds *. 1.0e9 /. float_of_int total_transitions)
        ; "overall", Evaluation.json_of_summary overall
        ; ( "by_opponent"
          , `Assoc

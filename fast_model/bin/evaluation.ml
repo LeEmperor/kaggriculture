@@ -90,7 +90,7 @@ let baseline_entrant id =
 
 (* A DSL entrant's interpreter is built once and shared by every game; only the register
    bank is per game, which is what [Interpreter.Policy.create] allocates. *)
-let dsl_entrant ~family_path ~candidate_path =
+let dsl_entrant ?label ~family_path ~candidate_path () =
   let family = load_family family_path in
   let interpreter =
     Policy_dsl.Interpreter.create
@@ -99,7 +99,16 @@ let dsl_entrant ~family_path ~candidate_path =
       ~vocabulary:Kag_vocabulary.Native_vocabulary.t
       ~build_action:Kag_vocabulary.Native_actions.build_action
   in
-  { label = Filename.basename candidate_path
+  { label =
+      (match label with
+       | Some label -> label
+       | None ->
+         (* policy_id plus the candidate's stem: a family can field several candidates in
+            one league, and "candidate_baseline.json" would name none of them. *)
+         Printf.sprintf
+           "%s:%s"
+           family.policy_id
+           (Filename.remove_extension (Filename.basename candidate_path)))
   ; kind = "dsl"
   ; expect_ops = []
   ; expect_orders = []
@@ -120,7 +129,7 @@ let resolve ~base_dir path =
      "baseline:crop-greedy"                  a registry baseline
      "candidate.json"                        a candidate under the ambient --family
      {"baseline": "crop-greedy"}
-     {"family": "f.json", "candidate": "c.json"}
+     {"family": "f.json", "candidate": "c.json", "label": "optional-name"}
 
    The object form is what makes a heterogeneous population expressible: each entrant
    carries its own family, so a league is not restricted to one encoding. *)
@@ -132,7 +141,7 @@ let of_spec ~base_dir ~ambient_family json =
   | `String candidate ->
     (match ambient_family with
      | Some family_path ->
-       dsl_entrant ~family_path ~candidate_path:(resolve ~base_dir candidate)
+       dsl_entrant ~family_path ~candidate_path:(resolve ~base_dir candidate) ()
      | None ->
        failwith
          (Printf.sprintf
@@ -152,7 +161,14 @@ let of_spec ~base_dir ~ambient_family json =
          | Some other, _ ->
            failwith ("family must be a string, got " ^ Yojson.Safe.to_string other)
        in
-       dsl_entrant ~family_path ~candidate_path:(resolve ~base_dir candidate)
+       let label =
+         match json_field "label" document with
+         | Some (`String label) -> Some label
+         | None -> None
+         | Some other ->
+           failwith ("label must be a string, got " ^ Yojson.Safe.to_string other)
+       in
+       dsl_entrant ?label ~family_path ~candidate_path:(resolve ~base_dir candidate) ()
      | _ ->
        failwith
          ("an entrant object must have exactly one of \"baseline\" or \"candidate\": "

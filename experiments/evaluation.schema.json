@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaggriculture.local/evaluation.schema.json",
+  "title": "Kaggriculture evaluation result",
+  "description": "A league table or a single-policy evaluation produced by kag_sim and wrapped with provenance by tools/league.py. Sibling of experiment.schema.json, which describes one pairwise comparison; an evaluation is a population measurement and does not have a policy_a/policy_b.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "schema_version",
+    "project_commit",
+    "upstream_commit",
+    "simulator",
+    "build",
+    "machine",
+    "recorded_at",
+    "seed_split",
+    "inputs",
+    "native"
+  ],
+  "properties": {
+    "kind": { "enum": ["league", "evaluation"] },
+    "schema_version": { "const": 1 },
+    "project_commit": { "type": "string" },
+    "upstream_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "simulator": { "const": "ocaml-native" },
+    "build": {
+      "type": "object",
+      "required": ["compiler", "flags"],
+      "properties": {
+        "compiler": { "type": "string" },
+        "flags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "machine": { "type": "object" },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "player_positions": {
+      "type": "array",
+      "items": { "enum": ["a-first", "b-first"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "seed_split": {
+      "type": "object",
+      "description": "Which immutable split the seeds came from. 'name' is one of the tools/seed_splits.py splits, or 'ad-hoc' for a seed file outside them — an ad-hoc evaluation may not be cited in a promotion decision.",
+      "additionalProperties": false,
+      "required": ["name", "file", "sha256", "seeds"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "file": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "seeds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Every file the run read, with its digest, so a result can be re-run or shown to be unreproducible.",
+      "required": ["sha256"],
+      "properties": {
+        "entrants_file": { "type": "string" },
+        "family": { "type": "string" },
+        "candidate": { "type": "string" },
+        "opponents_file": { "type": "string" },
+        "executable": { "type": "string" },
+        "sha256": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "native": {
+      "type": "object",
+      "description": "The kag_sim payload, verbatim. A league carries 'table'; an evaluation carries 'overall', 'by_opponent', and 'by_position'.",
+      "required": ["backend", "schema_version", "games", "turns", "seeds"],
+      "properties": {
+        "backend": { "const": "ocaml-native" },
+        "schema_version": { "const": 1 },
+        "label": { "type": "string" },
+        "games": { "type": "integer", "minimum": 1 },
+        "turns": { "type": "integer", "minimum": 1 },
+        "seeds": { "type": "integer", "minimum": 1 },
+        "statistics_over_games": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Evaluations only. How many distinct games the summaries were computed over. Differs from 'games' when --copies repeated an identical deterministic workload for a throughput measurement: the flat totals count every copy, the statistics count one, so an interval is never narrowed by duplicates."
+        },
+        "table": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/row" }
+        },
+        "overall": { "$ref": "#/$defs/summary" },
+        "by_opponent": { "type": "object", "additionalProperties": { "$ref": "#/$defs/summary" } },
+        "by_position": { "type": "object", "additionalProperties": { "$ref": "#/$defs/summary" } },
+        "worst_matchup": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["opponent", "score_rate"],
+              "properties": {
+                "opponent": { "type": "string" },
+                "score_rate": { "type": "number" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "description": "The game plan's Phase 7 reported statistics for one set of games, measured from the subject's own side. 'margin' is the subject's final money minus the opponent's.",
+      "required": [
+        "games",
+        "turns",
+        "wins",
+        "draws",
+        "losses",
+        "win_rate",
+        "score_rate",
+        "win_rate_ci95",
+        "margin_mean",
+        "margin_median",
+        "margin_variance",
+        "margin_stddev",
+        "margin_stderr",
+        "margin_mean_ci95",
+        "margin_p5",
+        "margin_p95",
+        "margin_min",
+        "margin_max",
+        "money_mean",
+        "opponent_money_mean",
+        "catastrophic_losses",
+        "catastrophic_loss_rate"
+      ],
+      "properties": {
+        "games": { "type": "integer", "minimum": 0 },
+        "turns": { "type": "integer", "minimum": 0 },
+        "wins": { "type": "integer", "minimum": 0 },
+        "draws": { "type": "integer", "minimum": 0 },
+        "losses": { "type": "integer", "minimum": 0 },
+        "win_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "score_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "win_rate_ci95": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "margin_mean": { "type": "number" },
+        "margin_median": { "type": "number" },
+        "margin_variance": { "type": "number", "minimum": 0 },
+        "margin_stddev": { "type": "number", "minimum": 0 },
+        "margin_stderr": { "type": "number", "minimum": 0 },
+        "margin_mean_ci95": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" }
+        },
+        "margin_p5": { "type": "number" },
+        "margin_p95": { "type": "number" },
+        "margin_min": { "type": "number" },
+        "margin_max": { "type": "number" },
+        "money_mean": { "type": "number" },
+        "opponent_money_mean": { "type": "number" },
+        "catastrophic_losses": { "type": "integer", "minimum": 0 },
+        "catastrophic_loss_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "row": {
+      "type": "object",
+      "required": ["id", "kind", "overall", "by_opponent", "by_position"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["baseline", "dsl"] },
+        "overall": { "$ref": "#/$defs/summary" },
+        "by_opponent": { "type": "object", "additionalProperties": { "$ref": "#/$defs/summary" } },
+        "by_position": { "type": "object", "additionalProperties": { "$ref": "#/$defs/summary" } },
+        "worst_matchup": {},
+        "coverage": {
+          "type": "object",
+          "description": "Declared-versus-observed action shapes. A non-empty declared_shapes_missing means the run was vacuous for that entrant and kag_sim exits non-zero.",
+          "required": ["declared_shapes_missing", "observed"],
+          "properties": {
+            "declared_shapes_missing": { "type": "array", "items": { "type": "string" } },
+            "observed": { "type": "object" }
+          }
+        }
+      }
+    }
+  }
+}

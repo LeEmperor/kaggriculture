@@ -1,0 +1,9 @@
+{
+  "policy_id": "monocrop_field_v1",
+  "schema_version": 1,
+  "parameters": {
+    "crop": "WHEAT",
+    "harvest_age": 4,
+    "sell_floor": 38
+  }
+}

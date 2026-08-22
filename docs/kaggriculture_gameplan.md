@@ -10,8 +10,14 @@ Phase 4 trust gate below passed on 2026-08-21 — 1,000 full 720-turn seeded gam
 comparison against the pinned oracle, scripted and fuzz tapes, zero divergences,
 repeated clean on a second master seed. The Phase 5 same-policy workload measured
 135.573x scalar native speedup and a fixed worker pool plateaued near 2x at four
-to eight workers on the 4-core host.** Phase 6 (strategy platform and baseline opponent
-population) is next.
+to eight workers on the 4-core host. Phase 6's evaluation layer and baseline
+opponent population landed on 2026-08-22: immutable train/validation/holdout seed
+splits, eight baseline opponents behind a non-vacuity coverage gate, the full
+Phase 7 statistic list, the evaluation artifact, and an executable
+champion-promotion rule — see
+[`evaluation_protocol.md`](evaluation_protocol.md).** Phase 6's remaining piece,
+the parameterized heuristic, is next; per the instruction below it was
+deliberately not frozen before baseline play.
 
 The primary objective is to build the strongest practical Kaggle agent. Hardware acceleration is a secondary research path and must be justified by measurements. The first major deliverable is a trusted native simulator, not an FPGA demonstration or an early submission bot.
 
@@ -379,6 +385,12 @@ Keep policy decisions separate from simulator transitions. A policy receives onl
 
 ### Baseline opponent population
 
+Built and measured; [`evaluation_protocol.md`](evaluation_protocol.md) is the
+specification and holds the league table. The population is native OCaml
+(`baselines/`) rather than DSL families, because four of the six below cannot be
+expressed in the DSL's current game seam; the reasoning is recorded as step 11 of
+the work plan in [`ocaml_migration_decisions.md`](ocaml_migration_decisions.md).
+
 Build interpretable baselines before search:
 
 - random valid actions;
@@ -415,7 +427,8 @@ Do not freeze this schema before baseline play reveals which decisions materiall
 
 ### Dataset splits
 
-Create immutable, versioned sets for:
+Created; see [`evaluation_protocol.md`](evaluation_protocol.md) for the sizes,
+the derivation, and the immutability check. Create immutable, versioned sets for:
 
 - training seeds used by search;
 - validation seeds used for champion promotion;
@@ -448,7 +461,9 @@ Bayesian optimization and neural policies are not initial requirements. Add them
 
 ### Champion promotion
 
-A candidate becomes champion only when it:
+The rule below is made numeric and executable in
+[`evaluation_protocol.md`](evaluation_protocol.md)
+(`python3 -m tools.league promote`). A candidate becomes champion only when it:
 
 - beats the incumbent on the validation suite with a predeclared confidence rule;
 - does not introduce a severe opponent-specific regression;

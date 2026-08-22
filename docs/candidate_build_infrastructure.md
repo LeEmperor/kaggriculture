@@ -25,7 +25,7 @@ From a policy directory:
 cd experiments/policies/monocrop_reorder
 
 make candidate
-make check
+make creck
 ```
 
 From the repository root:

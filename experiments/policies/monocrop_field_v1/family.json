@@ -1,0 +1,106 @@
+{
+  "policy_id": "monocrop_field_v1",
+  "family": "monocrop",
+  "family_version": 1,
+  "dsl_version": 1,
+  "parameters": {
+    "crop": { "type": "enum", "values": [ "WHEAT" ] },
+    "harvest_age": { "type": "int", "min": 2, "max": 4 },
+    "sell_floor": { "type": "int", "min": 0, "max": 200 }
+  },
+  "registers": {
+    "last_step": { "type": "int", "init": -1, "class": "decision" },
+    "turns_seen": { "type": "int", "init": 0, "class": "telemetry" },
+    "harvests": { "type": "int", "init": 0, "class": "telemetry" }
+  },
+  "reset_when": [
+    "and",
+    [ "==", [ "obs", "step" ], [ "const", 0 ] ],
+    [ ">=", [ "state", "last_step" ], [ "const", 0 ] ]
+  ],
+  "observe": [],
+  "market_rules": [
+    {
+      "name": "restock_seed",
+      "when": [
+        "and",
+        [ "==", [ "obs", "seeds" ], [ "const", 0 ] ],
+        [ ">=", [ "obs", "money" ], [ "obs", "seed_cost" ] ]
+      ],
+      "emit": [ "BUY_SEED", [ "param", "crop" ], [ "const", 1 ] ]
+    },
+    {
+      "name": "sell_stock",
+      "when": [
+        "and",
+        [ ">", [ "obs", "shed_units" ], [ "const", 0 ] ],
+        [ ">=", [ "obs", "market_price" ], [ "param", "sell_floor" ] ]
+      ],
+      "emit": [ "SELL", [ "param", "crop" ], [ "obs", "shed_units" ] ]
+    }
+  ],
+  "farmer_cascade": [
+    {
+      "name": "drop_to_shed",
+      "when": [
+        "and",
+        [ ">", [ "obs", "carried_units" ], [ "const", 0 ] ],
+        [ "obs", "on_shed_access" ]
+      ],
+      "emit": [ "DROP" ]
+    },
+    {
+      "name": "water_plant",
+      "when": [
+        "and",
+        [ "obs", "tile_is_plant" ],
+        [ "not", [ "obs", "tile_watered_today" ] ]
+      ],
+      "emit": [ "WATER" ]
+    },
+    {
+      "name": "harvest_ready",
+      "when": [
+        "and",
+        [ "obs", "tile_is_plant" ],
+        [ ">", [ "obs", "tile_yield_units" ], [ "const", 0 ] ],
+        [
+          ">=",
+          [ "-", [ "obs", "day" ], [ "obs", "tile_planted_day" ] ],
+          [ "param", "harvest_age" ]
+        ]
+      ],
+      "emit": [ "HARVEST" ]
+    },
+    {
+      "name": "plant_seed",
+      "when": [
+        "and",
+        [ "obs", "tile_is_empty" ],
+        [ ">", [ "obs", "seeds" ], [ "const", 0 ] ]
+      ],
+      "emit": [ "PLANT", [ "param", "crop" ] ]
+    },
+    { "name": "idle", "when": [ "const", true ], "emit": [ "PASS" ] }
+  ],
+  "commit": [
+    { "reg": "last_step", "value": [ "obs", "step" ] },
+    {
+      "reg": "turns_seen",
+      "value": [ "+", [ "state", "turns_seen" ], [ "const", 1 ] ]
+    },
+    {
+      "reg": "harvests",
+      "value": [
+        "+",
+        [ "state", "harvests" ],
+        [
+          "if",
+          [ "fired?", "farmer", "harvest_ready" ],
+          [ "const", 1 ],
+          [ "const", 0 ]
+        ]
+      ]
+    }
+  ]
+}

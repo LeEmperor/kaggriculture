@@ -184,6 +184,41 @@ let animal_focused =
   }
 ;;
 
+(* The same livestock engine with no crew: one worker keeps the animals alone and every
+   unit of feed is bought at market price instead of grown by hands. Its distance from
+   [animal_focused] is what a hired crew is worth here, and that number is the price of
+   the DSL's most expensive extension — hands need a second cascade domain inside
+   policy_dsl itself, in both interpreters. See docs/dsl_seam_extension.md. *)
+let animal_solo =
+  { id = "animal-solo"
+  ; summary = "one worker keeping cows, buying every unit of feed at market price"
+  ; expect_ops =
+      [ Coverage.Move
+      ; Coverage.Build_pasture
+      ; Coverage.Pickup
+      ; Coverage.Place
+      ; Coverage.Feed
+      ; Coverage.Care
+      ; Coverage.Harvest
+      ; Coverage.Collect_fertilizer
+      ]
+  ; expect_orders = [ Coverage.Buy_animal; Coverage.Buy_product; Coverage.Sell ]
+  ; create =
+      Animal_focused.create
+        { Animal_focused.animal = cow
+        ; animal_target = 3
+        ; feed_plot_tiles = 0 (* no hands to work a plot, so no seeds either *)
+        ; hands_target = 0
+        ; reserve = 200
+        ; feed_stock = 30
+        ; feed_price_cap = 60
+        ; sell_batch = 3
+        ; sell_out_turns
+        ; dump_turns
+        }
+  }
+;;
+
 let market_focused =
   { id = "market-focused"
   ; summary = "holds wheat bought into cheap supply and releases it into scarcity"
@@ -211,6 +246,7 @@ let all =
   ; crop_greedy
   ; premium_crop
   ; animal_focused
+  ; animal_solo
   ; expansion
   ; market_focused
   ]

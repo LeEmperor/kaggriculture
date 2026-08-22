@@ -1,0 +1,30 @@
+[
+  {
+    "baseline": "pass"
+  },
+  {
+    "baseline": "random-valid"
+  },
+  {
+    "baseline": "crop-greedy"
+  },
+  {
+    "baseline": "premium-crop"
+  },
+  {
+    "baseline": "animal-focused"
+  },
+  {
+    "baseline": "animal-solo"
+  },
+  {
+    "baseline": "expansion"
+  },
+  {
+    "baseline": "market-focused"
+  },
+  {
+    "family": "../../policies/monocrop_reorder/family.json",
+    "candidate": "../../policies/monocrop_reorder/candidate_baseline.json"
+  }
+]

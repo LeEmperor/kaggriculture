@@ -4,14 +4,20 @@
    kag_sim.exe differential [--bundle FILE]
    kag_sim.exe play --seed N --family FILE --policy-a FILE [--policy-b pass|FILE]
                     [--trace FILE]
-   kag_sim.exe evaluate --family FILE --candidate FILE --opponents FILE --seeds FILE
-                        [--threads N] [--copies N]
+   kag_sim.exe evaluate (--baseline ID | --family FILE --candidate FILE)
+                        --opponents FILE --seeds FILE [--threads N] [--copies N]
+                        [--coverage] [--artifact FILE] [--label NAME]
+   kag_sim.exe league --entrants FILE --seeds FILE [--family FILE] [--threads N]
+                      [--artifact FILE] [--no-coverage]
 
    The bench drives PASS tapes through the full rule set — not a policy workload; see
    docs/benchmark_baseline.md before quoting it anywhere. [differential] is the
    verification half of the Phase 4 trust gate; drive it through
    [python3 -m tools.differential], which owns the oracle half. [play] and [evaluate]
-   execute the DSL against native observations and actions: no JSON enters the turn loop. *)
+   execute the DSL against native observations and actions: no JSON enters the turn loop.
+   [evaluate] and [league] are the Phase 6 evaluation layer; both accept native baselines
+   (kag_baselines) and DSL candidates as entrants, and the statistics they report are the
+   game plan's Phase 7 list. See docs/evaluation_protocol.md. *)
 
 module Model = Kag_model.Model
 
@@ -396,15 +402,23 @@ let () =
     | _ ->
       Printf.eprintf
         "usage: %s bench [--games N]\n\
-        \       %s play --seed N --family FILE --policy-a FILE [--policy-b pass|FILE] \
+        \       %s play --seed N [--family FILE] --policy-a SPEC [--policy-b SPEC] \
          [--trace FILE]\n\
-        \       %s evaluate --family FILE --candidate FILE --opponents FILE --seeds FILE \
-         [--threads N] [--copies N]\n\
-        \       %s differential [--bundle FILE]\n"
+        \       %s evaluate (--baseline ID | --family FILE --candidate FILE) \
+         --opponents FILE --seeds FILE [--threads N] [--copies N] [--coverage] \
+         [--artifact FILE] [--label NAME]\n\
+        \       %s league --entrants FILE --seeds FILE [--family FILE] [--threads N] \
+         [--artifact FILE] [--label NAME] [--no-coverage]\n\
+        \       %s differential [--bundle FILE]\n\
+         \n\
+         SPEC is \"pass\", \"baseline:<id>\", or a candidate JSON path (needs --family).\n\
+         Baselines: %s\n"
         Sys.argv.(0)
         Sys.argv.(0)
         Sys.argv.(0)
-        Sys.argv.(0);
+        Sys.argv.(0)
+        Sys.argv.(0)
+        (String.concat " " Kag_baselines.Registry.ids);
       exit 2
   with
   | exn ->

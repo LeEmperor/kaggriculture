@@ -491,14 +491,70 @@ gate they form has now passed.
   `perf_event_paranoid=4`, so no state-layout, batching, SIMD, or specialized
   dispatch change was attempted without hardware-counter evidence.
 
+- **Step 11 — the Phase 6 evaluation layer and baseline population are built
+  (2026-08-22).** Immutable `training`/`validation`/`holdout` seed splits
+  (1024/512/512, disjoint, re-derivable and verified on every test run), the
+  evaluation artifact and its schema, the executable champion-promotion rule,
+  eight baseline opponents, and `kag_sim league`. Full specification and the
+  measured league table: [`evaluation_protocol.md`](evaluation_protocol.md).
+
+  **The baselines are native OCaml, not DSL families, and that is a decision this
+  document has to own.** Four of the six opponents the game plan names —
+  animal-focused, expansion, market-focused, random-valid — cannot be written
+  inside the DSL's game seam at all: the vocabulary is fifteen accessors about
+  the tile the farmer stands on, the action seam is `PASS/DROP/HARVEST/WATER/PLANT`
+  plus `BUY_SEED/SELL`, `hands` is hard-coded empty, and there is no randomness
+  operator. Decision 3's Tier 3 covers this exactly — research-only, never
+  shipped, so never needing Python — and the discipline that document states
+  ("author in the DSL even for throwaway exploration") is about *candidates*,
+  which may one day win and have to ship. A measuring stick is not a candidate.
+  The alternative considered and rejected was widening the seam first, which
+  would have meant guessing which accessors matter before anything had been
+  measured; the population is what will tell us.
+
+  Non-vacuity is a gate rather than a claim: each baseline declares the action
+  shapes it exists to produce, `kag_sim` tallies what was actually emitted, and a
+  declared shape that never appeared exits non-zero. Two declared absences are
+  findings in their own right — a uniformly random agent essentially never
+  reaches HARVEST, because keeping a plant alive to first yield needs two
+  deliberate waterings of the same tile; and the endgame DROP correctly does
+  nothing for baselines whose last crop cycle finishes before the final day.
+
+  `evaluate` grew heterogeneous entrants (a baseline id or a family/candidate
+  pair, each carrying its own family) and the game plan's full Phase 7 statistic
+  list, while keeping the flat field block the Phase 5 benchmark's correctness
+  check reads — verified against the checked-in workload, which still reports 20
+  games, 14,380 turns, and the same money totals.
+
 ### Next
 
-11. **Phase 6 — build the baseline opponent population and strategy evaluation
-    layer.** Use the trusted, benchmarked native rollout path for the baseline
-    policies and parameterized heuristic described by the game plan. Keep
-    immutable seed splits and champion-promotion rules with the evaluation
-    artifacts; do not begin CPU layout/SIMD or hardware work without reopening
-    it from profile evidence.
+12. **Widen the DSL game seam — Level A — before authoring the parameterized
+    heuristic.** The league inverted the order this step was written in. Search
+    inside the current seam has a hard ceiling: `monocrop-reorder-v1` emits 0.0%
+    MOVE and 93.2% PASS and ranks seventh of nine, because the vocabulary cannot
+    name a tile it is not standing on. No parameter search fixes that.
+
+    The levels and their measured prices are in
+    [`dsl_seam_extension.md`](dsl_seam_extension.md). The short form: Level A —
+    new accessors and emits in the seam files, no change to `policy_dsl` — takes
+    a policy from 0.319 to 0.757, because `premium-crop` turns out to *be* a
+    Level-A policy. Level C, hands, is the most expensive extension on the list
+    (a third cascade inside the generic library, in both interpreters) and is
+    worth 1.6% of bankroll: `animal-solo`, the livestock engine with its crew
+    removed and all feed bought at market price, wins 44.7% of its games against
+    `animal-focused` and finishes $307 behind it on average. Tier 2, tile
+    addressing, is unpriced and is the real open question.
+
+    That document also records the tradeoff Level A forces and Decision 5 pays
+    for: a fat accessor puts the task ranking in `submission/vocabulary.py`,
+    where it is frozen code rather than a swappable blob.
+
+13. **Then Phase 6's parameterized heuristic and Phase 7 search**, inside the
+    widened seam. The game plan defers freezing the parameter schema until
+    "baseline play reveals which decisions materially affect results", and it now
+    has. Run search on the `training` split and promote through
+    `tools.league promote` on `validation`. Do not begin CPU layout/SIMD or
+    hardware work without reopening it from profile evidence.
 
 ## Resolved questions
 

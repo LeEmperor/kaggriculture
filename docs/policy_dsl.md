@@ -516,6 +516,14 @@ The first family that genuinely needs one of these should be built as Tier 2
 (dual-implemented) rather than by growing the DSL to fit, until it is clear the
 shape recurs.
 
+**These limits are now priced.** The Phase 6 league measured what each costs in
+score, and the answers are not proportional to their engineering cost:
+multi-worker coordination — the most expensive to add, since it needs a new
+third cascade inside this library rather than an entry in a seam file — is worth 1.6% of
+final bankroll, while movement and board-derived accessors, which need no change
+to this library at all, take a policy from 0.319 to 0.757. See [`dsl_seam_extension.md`](dsl_seam_extension.md) for the tiers, the
+measurements, and the recommended order.
+
 ## Adoption order (DSL scope)
 
 Sequencing for the wider migration lives in
