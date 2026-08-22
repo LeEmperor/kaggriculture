@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaggriculture.local/schemas/submission-v1.json",
+  "title": "Kaggriculture candidate build manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "family",
+    "default_candidate",
+    "candidates",
+    "checks"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": 1 },
+    "family": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "emitter", "artifact"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "emitter": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "artifact": { "$ref": "#/$defs/relativePath" }
+      }
+    },
+    "default_candidate": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+    "candidates": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["strategy_name", "parameters"],
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "parameters": { "$ref": "#/$defs/relativePath" }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "research_policy",
+        "python_tests",
+        "golden_backends",
+        "dune_scopes",
+        "oracle_seeds",
+        "opponent"
+      ],
+      "properties": {
+        "research_policy": { "$ref": "#/$defs/pythonModule" },
+        "python_tests": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/pythonModule" }
+        },
+        "golden_backends": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["hand", "dsl", "ocaml"] }
+        },
+        "dune_scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/relativePath" }
+        },
+        "oracle_seeds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "opponent": { "$ref": "#/$defs/pythonModule" }
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "pythonModule": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+    }
+  }
+}

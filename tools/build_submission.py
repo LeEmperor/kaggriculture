@@ -114,6 +114,32 @@ def _runtime_sources() -> tuple[tuple[str, str], ...]:
     return tuple(sources)
 
 
+def _input_hashes(
+    family_document: Mapping[str, Any], candidate_document: Mapping[str, Any]
+) -> dict[str, str]:
+    """Return the hashes embedded in, and used to identify, an artifact."""
+    sources = _runtime_sources()
+    runtime_digest_input = "".join(
+        f"{name}\0{source}\0" for name, source in sources
+    )
+    return {
+        "family": _sha256(_compact_json(family_document)),
+        "candidate": _sha256(_compact_json(candidate_document)),
+        "runtime": _sha256(runtime_digest_input),
+        "builder": _sha256(Path(__file__).read_text()),
+    }
+
+
+def submission_input_hashes(
+    family_path: Path, candidate_path: Path
+) -> dict[str, str]:
+    """Validate two inputs and return the provenance hashes used by the packer."""
+    family_document = _json_object(family_path, "family")
+    candidate_document = _json_object(candidate_path, "candidate")
+    _validate(family_document, candidate_document)
+    return _input_hashes(family_document, candidate_document)
+
+
 def _sources_literal(sources: tuple[tuple[str, str], ...]) -> str:
     rows = ["{"]
     for module_name, source in sources:
@@ -131,11 +157,8 @@ def build_submission(family_path: Path, candidate_path: Path) -> str:
     family_json = _compact_json(family_document)
     candidate_json = _compact_json(candidate_document)
     sources = _runtime_sources()
-    runtime_digest_input = "".join(
-        f"{name}\0{source}\0" for name, source in sources
-    )
     source_literal = _sources_literal(sources)
-    builder_digest = _sha256(Path(__file__).read_text())
+    input_hashes = _input_hashes(family_document, candidate_document)
     policy_id = str(family_document["policy_id"])
     policy_family = str(family_document["family"])
     family_version = int(family_document["family_version"])
@@ -157,10 +180,10 @@ POLICY_FAMILY_VERSION = {family_version!r}
 CANDIDATE_SCHEMA_VERSION = {CANDIDATE_SCHEMA_VERSION!r}
 POLICY_PARAMETERS = _json.loads({candidate_json!r})["parameters"]
 BUILD_INPUT_SHA256 = {{
-    "family": {_sha256(family_json)!r},
-    "candidate": {_sha256(candidate_json)!r},
-    "runtime": {_sha256(runtime_digest_input)!r},
-    "builder": {builder_digest!r},
+    "family": {input_hashes["family"]!r},
+    "candidate": {input_hashes["candidate"]!r},
+    "runtime": {input_hashes["runtime"]!r},
+    "builder": {input_hashes["builder"]!r},
 }}
 
 _RUNTIME_PREFIX = {RUNTIME_PREFIX!r}

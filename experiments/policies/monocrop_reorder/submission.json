@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../tools/submission.schema.json",
+  "schema_version": 1,
+  "family": {
+    "name": "monocrop_reorder",
+    "emitter": "monocrop_reorder",
+    "artifact": "family.json"
+  },
+  "default_candidate": "baseline",
+  "candidates": {
+    "baseline": {
+      "strategy_name": "monocrop-reorder-baseline",
+      "parameters": "candidate_baseline.json"
+    }
+  },
+  "checks": {
+    "research_policy": "experiments.policies.monocrop_reorder.dsl_policy",
+    "python_tests": [
+      "tests.test_monocrop_reorder",
+      "tests.test_dsl_interpreter",
+      "tests.test_golden_vectors",
+      "tests.test_submission_boundary"
+    ],
+    "golden_backends": ["hand", "dsl", "ocaml"],
+    "dune_scopes": ["authoring", "interp"],
+    "oracle_seeds": [1234],
+    "opponent": "reference.policies.pass_policy"
+  }
+}

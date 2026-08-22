@@ -73,71 +73,18 @@ let benchmark argv =
 
 (* ---------------- native policy loading ---------------- *)
 
-let read_json path =
-  match Yojson.Safe.from_file path with
-  | json -> json
-  | exception exn ->
-    failwith (Printf.sprintf "cannot read %s: %s" path (Printexc.to_string exn))
-;;
+(* The family/candidate readers and the entrant vocabulary live in [Evaluation], which
+   [Runner] also needs; [play] uses the same resolver so a baseline and a DSL candidate
+   are interchangeable on either side of a game. *)
 
-let json_field key = function
-  | `Assoc fields -> List.assoc_opt key fields
-  | _ -> None
-;;
-
-let candidate_parameters (family : Policy_dsl.Family.t) path =
-  let candidate = read_json path in
-  (match json_field "policy_id" candidate with
-   | Some (`String id) when id = family.policy_id -> ()
-   | Some (`String id) ->
-     failwith
-       (Printf.sprintf
-          "%s targets policy_id %S but the family is %S"
-          path
-          id
-          family.policy_id)
-   | _ -> failwith (Printf.sprintf "%s has no string policy_id" path));
-  (match json_field "schema_version" candidate with
-   | Some (`Int 1) -> ()
-   | Some version ->
-     failwith
-       (Printf.sprintf
-          "%s has unsupported schema_version %s"
-          path
-          (Yojson.Safe.to_string version))
-   | None -> failwith (Printf.sprintf "%s has no schema_version" path));
-  match json_field "parameters" candidate with
-  | Some parameters -> Policy_dsl.Family.bind family parameters
-  | None -> failwith (Printf.sprintf "%s has no parameters block" path)
-;;
-
-let load_family path =
-  Policy_dsl.Family.load
-    (read_json path)
-    ~observations:Kag_vocabulary.Native_vocabulary.t.Policy_dsl.Interpreter.kinds
-    ~emits:Kag_vocabulary.Native_actions.emits
-;;
-
-type policy_factory = unit -> Model.policy
-
-let pass_factory : policy_factory = fun () _ -> Model.pass_action
-
-let candidate_factory family path : policy_factory =
-  let interpreter =
-    Policy_dsl.Interpreter.create
-      ~family
-      ~parameters:(candidate_parameters family path)
-      ~vocabulary:Kag_vocabulary.Native_vocabulary.t
-      ~build_action:Kag_vocabulary.Native_actions.build_action
+let factory_of_spec ~family spec : Model.config -> seat:int -> Model.policy =
+  let entrant =
+    Evaluation.of_spec
+      ~base_dir:(Filename.dirname spec)
+      ~ambient_family:family
+      (`String spec)
   in
-  fun () ->
-    let policy = Policy_dsl.Interpreter.Policy.create interpreter in
-    Policy_dsl.Interpreter.Policy.act policy
-;;
-
-let factory_of_spec family = function
-  | "pass" -> pass_factory
-  | candidate -> candidate_factory family candidate
+  entrant.Evaluation.create
 ;;
 
 let json_of_result ~seed (result : Model.result) : Yojson.Safe.t =
@@ -185,11 +132,10 @@ let play argv =
     | Some seed -> seed
     | None -> failwith "play requires --seed"
   in
-  if !family_path = "" then failwith "play requires --family";
   if !policy_a = "" then failwith "play requires --policy-a";
-  let family = load_family !family_path in
-  let make_a = factory_of_spec family !policy_a
-  and make_b = factory_of_spec family !policy_b in
+  let family = if !family_path = "" then None else Some !family_path in
+  let make_a = factory_of_spec ~family !policy_a
+  and make_b = factory_of_spec ~family !policy_b in
   let records = ref [] in
   let on_actions ~turn action_a action_b =
     records
@@ -204,12 +150,13 @@ let play argv =
          ]
        :: !records
   in
+  let config = { Model.default_config with seed } in
   let result =
     Model.run_game
       ~on_actions
-      { Model.default_config with seed }
-      ~policy_a:(make_a ())
-      ~policy_b:(make_b ())
+      config
+      ~policy_a:(make_a config ~seat:0)
+      ~policy_b:(make_b config ~seat:1)
   in
   (match !trace_path with
    | None -> ()
@@ -231,244 +178,6 @@ let play argv =
        | other -> other)
   in
   print_endline (Yojson.Safe.to_string summary)
-;;
-
-(* ---------------- evaluate ---------------- *)
-
-let read_lines path =
-  let input = open_in path in
-  let lines = ref [] in
-  (try
-     while true do
-       let line = String.trim (input_line input) in
-       if line <> "" && line.[0] <> '#' then lines := line :: !lines
-     done
-   with
-   | End_of_file -> ());
-  close_in input;
-  List.rev !lines
-;;
-
-type evaluation_job =
-  { opponent : policy_factory
-  ; seed : int
-  ; candidate_first : bool
-  }
-
-type evaluation_totals =
-  { mutable games : int
-  ; mutable transitions : int
-  ; mutable wins : int
-  ; mutable draws : int
-  ; mutable losses : int
-  ; mutable candidate_money : float
-  ; mutable opponent_money : float
-  }
-
-let empty_evaluation_totals () =
-  { games = 0
-  ; transitions = 0
-  ; wins = 0
-  ; draws = 0
-  ; losses = 0
-  ; candidate_money = 0.0
-  ; opponent_money = 0.0
-  }
-;;
-
-let add_evaluation_totals into from =
-  into.games <- into.games + from.games;
-  into.transitions <- into.transitions + from.transitions;
-  into.wins <- into.wins + from.wins;
-  into.draws <- into.draws + from.draws;
-  into.losses <- into.losses + from.losses;
-  into.candidate_money <- into.candidate_money +. from.candidate_money;
-  into.opponent_money <- into.opponent_money +. from.opponent_money
-;;
-
-(* A fixed number of domains consumes independent game jobs. Each worker owns its model
-   state, policy register banks, and accumulator; the atomic job index is the only mutable
-   cache line shared during evaluation. The calling domain participates in the pool, so
-   [threads] means total workers rather than spawned workers plus one. *)
-let evaluate_jobs ~threads ~candidate jobs =
-  let next_job = Atomic.make 0 in
-  let worker () =
-    let totals = empty_evaluation_totals () in
-    let rec loop () =
-      let index = Atomic.fetch_and_add next_job 1 in
-      if index < Array.length jobs
-      then (
-        let job = jobs.(index) in
-        let config = { Model.default_config with seed = job.seed } in
-        let result, candidate_value, opponent_value =
-          if job.candidate_first
-          then (
-            let result =
-              Model.run_game config ~policy_a:(candidate ()) ~policy_b:(job.opponent ())
-            in
-            result, result.final_money.(0), result.final_money.(1))
-          else (
-            let result =
-              Model.run_game config ~policy_a:(job.opponent ()) ~policy_b:(candidate ())
-            in
-            result, result.final_money.(1), result.final_money.(0))
-        in
-        totals.games <- totals.games + 1;
-        totals.transitions <- totals.transitions + result.result_transitions;
-        totals.candidate_money <- totals.candidate_money +. candidate_value;
-        totals.opponent_money <- totals.opponent_money +. opponent_value;
-        if candidate_value > opponent_value
-        then totals.wins <- totals.wins + 1
-        else if candidate_value < opponent_value
-        then totals.losses <- totals.losses + 1
-        else totals.draws <- totals.draws + 1;
-        loop ())
-    in
-    loop ();
-    totals
-  in
-  let workers = min threads (Array.length jobs) in
-  if workers <= 1
-  then worker ()
-  else (
-    (* The pool is the only domain owner in the executable, is bounded by the
-       caller, and joins every domain before returning. OxCaml's generic alert
-       points applications with mixed threading models at [Multicore]; this
-       executable uses no other threading runtime. The captured interpreter is
-       immutable and every mutable value is either atomic or worker-local. *)
-    let spawn = Domain.spawn [@alert "-do_not_spawn_domains-unsafe_multidomain"] in
-    let domains = Array.init (workers - 1) (fun _ -> spawn worker) in
-    let totals = worker () in
-    Array.iter (fun domain -> add_evaluation_totals totals (Domain.join domain)) domains;
-    totals)
-;;
-
-let evaluate argv =
-  let family_path = ref ""
-  and candidate_path = ref ""
-  and opponents_path = ref ""
-  and seeds_path = ref ""
-  and threads = ref 1
-  and copies = ref 1 in
-  let i = ref 2 in
-  while !i < Array.length argv do
-    let value option assign =
-      if !i + 1 >= Array.length argv
-      then failwith (option ^ " expects a value")
-      else (
-        incr i;
-        assign argv.(!i))
-    in
-    (match argv.(!i) with
-     | "--family" -> value "--family" (fun path -> family_path := path)
-     | "--candidate" -> value "--candidate" (fun path -> candidate_path := path)
-     | "--opponents" -> value "--opponents" (fun path -> opponents_path := path)
-     | "--seeds" -> value "--seeds" (fun path -> seeds_path := path)
-     | "--threads" ->
-       value "--threads" (fun raw ->
-         match int_of_string_opt raw with
-         | Some value when value > 0 -> threads := value
-         | _ -> failwith "--threads expects a positive integer")
-     | "--copies" ->
-       value "--copies" (fun raw ->
-         match int_of_string_opt raw with
-         | Some value when value > 0 -> copies := value
-         | _ -> failwith "--copies expects a positive integer")
-     | arg -> failwith ("unknown argument: " ^ arg));
-    incr i
-  done;
-  List.iter
-    (fun (name, value) -> if !value = "" then failwith ("evaluate requires " ^ name))
-    [ "--family", family_path
-    ; "--candidate", candidate_path
-    ; "--opponents", opponents_path
-    ; "--seeds", seeds_path
-    ];
-  let family = load_family !family_path in
-  let candidate = candidate_factory family !candidate_path in
-  let opponent_specs =
-    match read_json !opponents_path with
-    | `List values ->
-      List.map
-        (function
-          | `String "pass" -> "pass"
-          | `String path when Filename.is_relative path ->
-            Filename.concat (Filename.dirname !opponents_path) path
-          | `String path -> path
-          | value ->
-            failwith
-              ("opponents must be an array of candidate paths or \"pass\", got "
-               ^ Yojson.Safe.to_string value))
-        values
-    | _ -> failwith "opponents must be a JSON array"
-  in
-  if opponent_specs = [] then failwith "opponents must not be empty";
-  let seeds =
-    List.map
-      (fun raw ->
-        match int_of_string_opt raw with
-        | Some seed -> seed
-        | None -> failwith (Printf.sprintf "invalid seed %S in %s" raw !seeds_path))
-      (read_lines !seeds_path)
-  in
-  if seeds = [] then failwith "seeds must not be empty";
-  let jobs =
-    Array.of_list
-      (List.concat_map
-         (fun _ ->
-           List.concat_map
-             (fun opponent_spec ->
-               let opponent = factory_of_spec family opponent_spec in
-               List.concat_map
-                 (fun seed ->
-                   [ { opponent; seed; candidate_first = true }
-                   ; { opponent; seed; candidate_first = false }
-                   ])
-                 seeds)
-             opponent_specs)
-         (List.init !copies Fun.id))
-  in
-  let cpu_started = Unix.times () in
-  let started = Unix.gettimeofday () in
-  let totals = evaluate_jobs ~threads:!threads ~candidate jobs in
-  let seconds = Unix.gettimeofday () -. started in
-  let cpu_finished = Unix.times () in
-  let cpu_seconds =
-    cpu_finished.tms_utime
-    +. cpu_finished.tms_stime
-    -. cpu_started.tms_utime
-    -. cpu_started.tms_stime
-  in
-  let games_float = float_of_int totals.games
-  and transitions_float = float_of_int totals.transitions in
-  print_endline
-    (Yojson.Safe.to_string
-       (`Assoc
-         [ "backend", `String "ocaml-native"
-         ; "candidate", `String !candidate_path
-         ; "opponents", `Int (List.length opponent_specs)
-         ; "seeds", `Int (List.length seeds)
-         ; "workload_copies", `Int !copies
-         ; "threads", `Int (min !threads (Array.length jobs))
-         ; "requested_threads", `Int !threads
-         ; "games", `Int totals.games
-         ; "turns", `Int totals.transitions
-         ; "wins", `Int totals.wins
-         ; "draws", `Int totals.draws
-         ; "losses", `Int totals.losses
-         ; "candidate_money_total", `Float totals.candidate_money
-         ; "opponent_money_total", `Float totals.opponent_money
-         ; "mean_candidate_money", `Float (totals.candidate_money /. games_float)
-         ; "mean_opponent_money", `Float (totals.opponent_money /. games_float)
-         ; ( "mean_margin"
-           , `Float ((totals.candidate_money -. totals.opponent_money) /. games_float) )
-         ; "wall_seconds", `Float seconds
-         ; "cpu_seconds", `Float cpu_seconds
-         ; "cpu_utilization_percent", `Float (cpu_seconds /. seconds *. 100.0)
-         ; "games_per_second", `Float (games_float /. seconds)
-         ; "turns_per_second", `Float (transitions_float /. seconds)
-         ; "nanoseconds_per_turn", `Float (seconds *. 1.0e9 /. transitions_float)
-         ]))
 ;;
 
 (* ---------------- differential ----------------
@@ -681,7 +390,8 @@ let () =
     match if Array.length Sys.argv >= 2 then Sys.argv.(1) else "" with
     | "bench" -> benchmark Sys.argv
     | "play" -> play Sys.argv
-    | "evaluate" -> evaluate Sys.argv
+    | "evaluate" -> Runner.evaluate Sys.argv
+    | "league" -> Runner.league Sys.argv
     | "differential" -> differential Sys.argv
     | _ ->
       Printf.eprintf

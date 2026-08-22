@@ -1,3 +1,10 @@
 (executable
  (name kag_sim)
- (libraries kag_model kag_serialize kag_vocabulary policy_dsl yojson unix))
+ (libraries
+  kag_model
+  kag_serialize
+  kag_vocabulary
+  kag_baselines
+  policy_dsl
+  yojson
+  unix))

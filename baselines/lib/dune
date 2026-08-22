@@ -1,0 +1,11 @@
+; The Phase 6 baseline opponent population. These are Tier 3 policies in the sense
+; of docs/ocaml_migration_decisions.md — research-only opponents, never shipped —
+; so they are written directly against Model.policy rather than encoded in the DSL,
+; whose game seam is a one-tile/one-worker slice (docs/evaluation_protocol.md).
+;
+; The library depends on kag_model and nothing else: a baseline is a pure function
+; of the observation, and owns no files, no threads, and no CLI.
+
+(library
+ (name kag_baselines)
+ (libraries kag_model))

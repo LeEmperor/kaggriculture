@@ -1,0 +1,8 @@
+; The non-vacuity gate for the baseline population (game plan Phase 6, step 4).
+; Every baseline declares the action shapes it exists to produce; this replays it in
+; both seats and fails if a declared shape never appeared. It runs full episodes, so
+; it is also the regression test that no baseline crashes on the real rule set.
+
+(test
+ (name baselines_test)
+ (libraries kag_baselines kag_model))

@@ -1,0 +1,14 @@
+{
+  "artifact_sha256": "1913e5f91d715fd7fc6c8a83e22bf2e00c1c4618b4f5314ca4c08bd916e53e2d",
+  "builder_sha256": "2ab1e7f56bd400bb0252e955674c330861c52355a45ca8892911149b7ed11740",
+  "candidate": "baseline",
+  "candidate_sha256": "07087c98c6d9019219c8d021fe120665681040e847ac2b7e53feebeb40ae0970",
+  "family": "monocrop_reorder",
+  "family_sha256": "4cd3af79e5a6fdc2736d2ba43ff705110bd3de47562317dd7528954b37109645",
+  "family_version": 1,
+  "policy_id": "monocrop-reorder-v1",
+  "project_commit": "8fef2b46c960b47dff9131938e43f457dd35bf7f",
+  "runtime_sha256": "6e8680ef9d2b93a21fd2b199cd6c75ed0d2b04048eec58930fe40080d0124b2d",
+  "schema_version": 1,
+  "strategy_name": "monocrop-reorder-baseline"
+}
