@@ -1,0 +1,6 @@
+; The subprocess shim (Decision 1: process boundary, never FFI). Driven from Python by
+; experiments/ocaml_backend.py; see the header of kag_policy.ml for the line protocol.
+
+(executable
+ (name kag_policy)
+ (libraries policy_dsl kag_vocabulary yojson))

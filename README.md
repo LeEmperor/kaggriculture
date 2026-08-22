@@ -13,21 +13,21 @@ The implementation roadmap and correctness gates live in
 
 ## Quick start
 
-Prerequisites are Python 3.11+, Git, CMake 3.24+, and a C++20 compiler.
+Prerequisites are Python 3.11+, Git, and OCaml on the `5.2.0+ox` opam switch with dune.
 
 ```bash
 # Fetch the ignored upstream checkout at the pinned revision.
 python3 reference/bootstrap.py
 
-# Configure, build, and test the native development build.
-cmake --preset dev
-cmake --build --preset dev
-ctest --preset dev
+# Build and test everything OCaml (one dune workspace at the repository root).
+dune build
+dune test
 
-# Build and run the optimized baseline benchmark.
-cmake --preset release
-cmake --build --preset release
-./build/release/fast_model/kag-sim bench --games 100000
+# Python tests.
+python3 -m unittest discover -s tests -p 'test_*.py'
+
+# Run the optimized baseline benchmark.
+dune exec --profile release fast_model/bin/kag_sim.exe -- bench --games 100000
 ```
 
 Generated upstream sources, builds, virtual environments, traces, and experiment
@@ -35,18 +35,21 @@ results are ignored. The pin itself is recorded in
 [`reference/upstream.lock.json`](reference/upstream.lock.json), and experiment
 metadata follows [`experiments/experiment.schema.json`](experiments/experiment.schema.json).
 
-The benchmark currently measures only the verified PASS/initialization/terminal
-scaffold. Its throughput is a tooling baseline, not a simulator performance
-claim; it will become meaningful as complete transitions are implemented.
+The benchmark drives PASS tapes through the full rule set. That is a tooling
+baseline, not a head-to-head result: no Python/native speedup is quotable until
+both backends run the same policy workload, which waits on `kag_sim play`.
 
 ## Policy portability
 
-There is one strategy, with two implementations—not two independently trained
-models. During research, the C++ policy and simulator consume versioned JSON
-parameters so millions of games can be evaluated quickly. The selected policy
-algorithm is then implemented in self-contained Python for `submission/main.py`
-and checked for action parity over recorded observations. The submission never
-loads the C++ library, and no automatic C++-to-Python conversion is assumed.
+There is one strategy, not several independently trained models. A policy family
+is encoded as versioned JSON data (`docs/policy_dsl.md`), authored as typed OCaml
+values, and run by one interpreter per backend rather than one implementation per
+family: `submission/dsl/` in Python and `interp/` in OCaml, both reading the same
+`family.json`. Research drives the OCaml side over a subprocess pipe — never FFI —
+and the equivalence of the backends is enforced by checked-in golden vectors
+(`python3 -m experiments.golden check --backend {hand,dsl,ocaml}`). The submission
+is a self-contained, standard-library-only `submission/main.py` that loads no
+native code.
 
 Kaggle calls `agent(observation)` and expects the action dictionary documented
 in the supplied rules. At the pinned revision, each call has a 1-second budget
@@ -58,11 +61,14 @@ archives, this project targets a standard-library-only, self-contained
 
 ```text
 reference/     official Python oracle and deterministic trace policies
-fast_model/    C++20 simulator, unit tests, and benchmarks
-slow_model/    Python strategy and analysis experiments
+fast_model/    OCaml simulator, differential replay, unit tests, and benchmarks
+authoring/     OCaml elaboration: policy families as typed values, emitted as JSON
+interp/        OCaml DSL interpreter and the subprocess policy shim
+submission/    the Python DSL interpreter and the final self-contained main.py
+experiments/   policy families, candidates, golden vectors, and experiment definitions
+tools/         the Phase 4 differential runner and its coverage gate
+slow_model/    Python strategy and analysis scratch area
 tests/         cross-backend and submission tests
-experiments/   checked-in experiment definitions (generated results ignored)
-submission/    final self-contained main.py
 docs/          rules, design decisions, and benchmark reports
 ```
 

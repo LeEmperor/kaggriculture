@@ -204,11 +204,11 @@ let unique_names kind names =
 ;;
 
 let create
-  ~policy_id
-  ~family
-  ~family_version
-  ~parameters
-  ~registers
+  ~(policy_id : string)
+  ~(family : string)
+  ~(family_version : int)
+  ~(parameters : packed_param list)
+  ~(registers : packed_reg list)
   ~reset_when
   ~observe
   ~market_rules

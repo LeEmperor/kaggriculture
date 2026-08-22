@@ -1,0 +1,7 @@
+; The load-time refusals and the evaluation semantics the checked-in golden vectors cannot
+; reach. The cross-backend gate lives in experiments/golden.py, which dune does not
+; traverse; see the header of interpreter_test.ml.
+
+(test
+ (name interpreter_test)
+ (libraries policy_dsl kag_vocabulary yojson))

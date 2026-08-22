@@ -2,4 +2,4 @@
 ; is Python (reference/, submission/, experiments/, tests/) or generated
 ; (reference/upstream/, slow_model/.venv/), and scanning it would be slow noise.
 
-(dirs authoring fast_model)
+(dirs authoring fast_model interp)

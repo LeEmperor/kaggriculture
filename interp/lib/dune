@@ -1,0 +1,7 @@
+; The reading half of the DSL: parse a family.json, kind-check it, and run it. Game
+; agnostic by construction — it names no crop and no action, and the observation type is a
+; parameter, so the same interpreter serves JSON vectors and native simulator state.
+
+(library
+ (name policy_dsl)
+ (libraries yojson))

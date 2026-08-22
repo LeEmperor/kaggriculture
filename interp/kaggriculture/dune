@@ -1,0 +1,8 @@
+; The per-game seam of the reading side: the observation vocabulary over JSON observations
+; and the action encoding. The mirror of submission/vocabulary.py and submission/actions.py
+; — those two files are the specification these must agree with, and the golden vectors are
+; what says so.
+
+(library
+ (name kag_vocabulary)
+ (libraries policy_dsl yojson))

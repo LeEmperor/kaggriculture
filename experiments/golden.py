@@ -19,8 +19,9 @@ Subcommands:
 
     record   run seeded episodes, select vectors by signature coverage, and
              write the fixture file (checked in, unlike traces)
-    check    replay the fixture file through a backend (``dsl`` or ``hand``)
-    sweep    live turn-by-turn parity, hand-written vs DSL, over many seeds
+    check    replay the fixture file through a backend (``dsl``, ``hand``, or
+             ``ocaml`` -- the last needs ``dune build`` to have run)
+    sweep    live turn-by-turn parity, hand-written vs a backend, many seeds
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from experiments.policies.monocrop_reorder.policy import (
 )
 from reference.oracle import run_game
 from submission.dsl.family import Family
+from submission.dsl.pipeline import initial_registers
 
 FORMAT = "golden-vectors-v1"
 GOLDEN_PATH = (
@@ -375,7 +377,30 @@ def _hand_stepper():
     return step
 
 
-STEPPERS = {"dsl": _dsl_stepper, "hand": _hand_stepper}
+def _ocaml_stepper():
+    """The OCaml interpreter, over a pipe. See ``experiments/ocaml_backend.py``.
+
+    One process serves every vector: the stateless request form carries the register
+    bank with each observation, so vectors stay as independent here as in-process.
+    """
+    from experiments.ocaml_backend import is_available
+    from experiments.policies.monocrop_reorder.ocaml_policy import load_backend
+
+    if not is_available():
+        raise SystemExit(
+            "the OCaml shim is not built; run 'dune build' from the repository root"
+        )
+    backend = load_backend()
+
+    def step(
+        observation: dict[str, Any], registers: dict[str, Any]
+    ) -> tuple[Any, dict[str, Any]]:
+        return backend.step(observation, registers)
+
+    return step
+
+
+STEPPERS = {"dsl": _dsl_stepper, "hand": _hand_stepper, "ocaml": _ocaml_stepper}
 
 
 def check(path: Path, backend: str, strict_telemetry: bool) -> int:
@@ -412,19 +437,27 @@ def check(path: Path, backend: str, strict_telemetry: bool) -> int:
     return 1 if failed else 0
 
 
-def sweep(seeds: int) -> int:
+def sweep(seeds: int, backend: str = "dsl") -> int:
+    """Live turn-by-turn parity: the hand-written policy against ``backend``.
+
+    Stronger than ``check`` and complementary to it. ``check`` replays 134 selected
+    vectors with no oracle in the loop; this drives whole episodes, so every turn of
+    every seed is compared and the vectors' signature selection cannot hide a case.
+    The hand-written policy is the one whose actions are actually played, so a backend
+    that diverged would not steer the episode away from the divergence.
+    """
     family = _family()
     order = tuple(family.registers)
     decision = frozenset(family.decision_registers())
     hand = [MonocropReorder(load_parameters()) for _ in (0, 1)]
-    dsl = [load_interpreter() for _ in (0, 1)]
-    banks = [interpreter.initial_registers() for interpreter in dsl]
+    steppers = [STEPPERS[backend]() for _ in (0, 1)]
+    banks = [initial_registers(family.registers) for _ in (0, 1)]
     comparison = Comparison()
 
     def side(player: int):
         def policy(observation: dict[str, Any]) -> Any:
             expected = hand[player].act(observation)
-            action, banks[player] = dsl[player].step(observation, banks[player])
+            action, banks[player] = steppers[player](observation, banks[player])
             comparison.compare(
                 f"seed {seed} player {player} step {observation['step']}",
                 decision,
@@ -441,7 +474,7 @@ def sweep(seeds: int) -> int:
     for seed in range(seeds):
         run_game(seed, side(0), side(1))
 
-    print(comparison.summary(f"sweep[{seeds} seeds]"))
+    print(comparison.summary(f"sweep[{backend}, {seeds} seeds]"))
     return 1 if comparison.failed else 0
 
 
@@ -461,8 +494,9 @@ def main() -> None:
     checker.add_argument("--backend", choices=sorted(STEPPERS), default="dsl")
     checker.add_argument("--strict-telemetry", action="store_true")
 
-    sweeper = commands.add_parser("sweep", help="live hand-vs-DSL parity")
+    sweeper = commands.add_parser("sweep", help="live hand-vs-backend parity")
     sweeper.add_argument("--seeds", type=int, default=DEFAULT_SWEEP_SEEDS)
+    sweeper.add_argument("--backend", choices=sorted(STEPPERS), default="dsl")
 
     args = parser.parse_args()
     if args.command == "record":
@@ -470,7 +504,7 @@ def main() -> None:
     elif args.command == "check":
         code = check(args.fixtures, args.backend, args.strict_telemetry)
     else:
-        code = sweep(args.seeds)
+        code = sweep(args.seeds, args.backend)
     sys.exit(code)
 
 

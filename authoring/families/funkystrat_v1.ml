@@ -38,6 +38,7 @@ let (last_step : Expr.ikind Expr.reg) =
   (Expr.Reg.int "last_step" ~init:(-1) ~cls:Expr.Decision : Expr.ikind Expr.reg)
 ;;
 
+let _state_membr : Family.packed_reg = R last_step
 let _policy_state : Family.packed_reg list = [ R last_step ]
 
 (* this type annotation says that the last_step is equal to an expression, said expression
